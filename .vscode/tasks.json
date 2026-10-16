@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "BlockQuest: запустить игру", "type": "npm", "script": "dev", "problemMatcher": [], "isBackground": true },
+    { "label": "BlockQuest: обновить Академию", "type": "npm", "script": "academy:update", "problemMatcher": [], "presentation": { "reveal": "always", "panel": "dedicated" } },
+    { "label": "BlockQuest: проверить обновления", "type": "shell", "command": "npm run academy:update -- --check", "problemMatcher": [] },
+    { "label": "BlockQuest: отменить последнее обновление", "type": "npm", "script": "academy:rollback", "problemMatcher": [], "presentation": { "reveal": "always", "panel": "dedicated" } }
+  ]
+}

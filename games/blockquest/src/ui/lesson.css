@@ -1,0 +1,234 @@
+.lesson-view {
+  border: 1px solid #2f4039;
+  border-radius: 12px;
+  background: #172426;
+  padding: 46px 5%;
+}
+
+.lesson-document {
+  max-width: 1030px;
+  margin: auto;
+}
+
+.lesson-document>h2 {
+  font-size: 43px;
+  letter-spacing: -1.7px;
+  font-weight: 550;
+  margin: 17px 0;
+}
+
+.lesson-document .lead {
+  font-size: 16px;
+  color: #afc2b2;
+  max-width: 700px;
+  line-height: 1.8;
+}
+
+.lesson-document p {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #9cb4a4;
+}
+
+.lesson-document code {
+  color: #d0dfbb;
+  font-size: .92em;
+}
+
+.lesson-document pre {
+  padding: 22px;
+  background: #101d20;
+  border: 1px solid #34483c;
+  border-radius: 8px;
+  line-height: 2;
+  overflow: auto;
+}
+
+.code-comment {
+  color: #74957b;
+}
+
+.code-purple {
+  color: #c1abd5;
+}
+
+.lesson-document>h3 {
+  font-size: 19px;
+  letter-spacing: -.4px;
+  font-weight: 550;
+  margin: 34px 0 12px;
+}
+
+.lesson-flow {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+  margin: 35px 0 40px;
+  padding: 23px;
+  border: 1px solid #34483c;
+  border-radius: 7px;
+  background: #20312b;
+}
+
+.lesson-flow>span {
+  color: #7c9a7c;
+  font: 11px ui-monospace,monospace;
+}
+
+.lesson-flow strong {
+  color: #cce1b7;
+  font: 500 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  margin-left: 12px;
+}
+
+.lesson-flow .icon {
+  width: 16px;
+  color: #698a70;
+}
+
+.lesson-missions {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 18px;
+  margin: 32px 0;
+}
+
+.lesson-missions article {
+  border: 1px solid #354b3b;
+  border-radius: 8px;
+  padding: 22px;
+  background: #1c2d28;
+}
+
+.mission-tier {
+  font: 9px ui-monospace,monospace;
+  color: #b4d893;
+}
+
+.lesson-missions h3 {
+  font-size: 19px;
+  letter-spacing: -.5px;
+  font-weight: 550;
+  line-height: 1.3;
+  margin: 15px 0;
+}
+
+.lesson-missions p,.lesson-missions li {
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.lesson-missions ol {
+  padding-left: 17px;
+  color: #bdcdb9;
+}
+
+.lesson-missions li {
+  padding: 6px 0;
+}
+
+.check-question {
+  padding-top: 15px;
+  border-top: 1px solid #364b3b;
+  color: #b9cfaa !important;
+}
+
+.lesson-missions button {
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.lesson-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid #34483c;
+}
+
+.lesson-bottom strong {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.3px;
+  line-height: 1.6;
+  color: #cce1b7;
+}
+
+@media (max-width:900px) {
+  .lesson-missions {
+    grid-template-columns: 1fr;
+  }
+
+  .lesson-missions article {
+    padding: 25px;
+  }
+
+  .lesson-bottom strong {
+    font-size: 16px;
+  }
+
+  .lesson-flow {
+    gap: 16px;
+  }
+
+  .lesson-flow strong {
+    margin-left: 7px;
+  }
+}
+
+@media (max-width:600px) {
+  .lesson-view {
+    padding: 27px 20px;
+  }
+
+  .lesson-document>h2 {
+    font-size: 34px;
+  }
+
+  .lesson-document .lead {
+    font-size: 14px;
+  }
+
+  .lesson-document p {
+    font-size: 12px;
+  }
+
+  .lesson-flow {
+    gap: 10px;
+    padding: 16px 12px;
+  }
+
+  .lesson-flow>span {
+    font-size: 8px;
+  }
+
+  .lesson-flow strong {
+    font-size: 10px;
+    margin-left: 2px;
+  }
+
+  .lesson-flow .icon {
+    width: 11px;
+  }
+
+  .lesson-missions article {
+    padding: 20px;
+  }
+
+  .lesson-document pre {
+    font-size: 10px;
+    padding: 13px;
+  }
+
+  .lesson-bottom {
+    align-items: start;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .lesson-bottom strong {
+    font-size: 15px;
+  }
+}

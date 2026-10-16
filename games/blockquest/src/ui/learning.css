@@ -1,0 +1,130 @@
+/* Последовательное знакомство и работа рядом с VS Code. */
+.topbar { height: 64px; }
+.page-heading { padding: 22px 0; }
+h1 { font-size: clamp(23px, 2.2vw, 31px); margin: 9px 0 7px; }
+.workspace { grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; }
+.workspace.play-only { display: block; max-width: 1100px; margin: auto; }
+.game-titlebar { min-height: 44px; }
+.hud { height: 66px; padding-top: 10px; padding-bottom: 10px; }
+.canvas-wrap { height: clamp(240px, calc(100svh - 360px), 640px); }
+canvas { height: 100%; object-fit: contain; }
+.controls { min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
+.developer-invite { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; margin-top: 15px; background: #22382b; border: 1px solid #627d49; border-radius: 9px; }
+.developer-invite strong { font-size: 15px; font-weight: 550; }
+.developer-invite p { font-size: 12px; line-height: 1.6; color: #a5b99b; margin: 7px 0 0; }
+.developer-invite button { flex-shrink: 0; font-size: 12px; }
+.lesson-panel { padding: 22px 20px 0; }
+.lesson-panel > h2 { font-size: 25px; line-height: 1.2; margin-top: 15px; }
+.panel-intro { font-size: 13px; line-height: 1.75; margin-bottom: 18px; }
+.panel-intro strong { color: #c6d9ba; font-weight: 500; font-family: ui-monospace, monospace; font-size: 12px; }
+.panel-heading .eyebrow { font-size: 10px; }
+.file-tab { font-size: 12px; padding: 12px; }
+.file-tab .icon { width: 15px; height: 15px; }
+.code-preview { padding: 12px 0; }
+.code-preview > div { height: 32px; }
+.code-preview code { font-size: 11px; letter-spacing: -.4px; }
+.line-number { width: 22px; font-size: 10px; }
+.active-code { background: #a2d57609; border-left: 2px solid #b5da8f; }
+.config-footnote { font-size: 11px; margin-bottom: 14px; }
+.parameter-purpose { margin: 0 0 20px; font-size: 12px; line-height: 1.75; color: #9eb69d; }
+.mission-heading { padding-top: 20px; }
+.mission-heading h3 { font-size: 14px; }
+.mission-heading > span { font-size: 11px; }
+.level-tabs button { font-size: 12px; padding: 9px 0; }
+.level-tabs { margin-bottom: 20px; }
+.mission-meta { font-size: 10px; }
+.mission-title { font-size: 22px; margin: 14px 0 12px; }
+.mission-story { font-size: 14px; line-height: 1.7; margin-bottom: 12px; }
+.mission-goal { font-size: 14px; line-height: 1.8; color: #d3dfc7; margin: 12px 0 20px; }
+.mission-hints { border-top: 1px solid #34453a; padding: 15px 0; }
+.mission-hints button { font-size: 12px; gap: 8px; }
+.mission-hints ol { padding-left: 20px; margin: 0 0 16px; }
+.mission-hints li { font-size: 13px; color: #aebfa5; line-height: 1.8; padding: 5px 0 5px 3px; }
+.hint-exhausted { font-size: 12px; color: #92a98c; line-height: 1.6; display: block; }
+.mission-verification { border: 1px solid #364c3b; border-radius: 6px; background: #172a23; color: #a3b99b; display: flex; gap: 9px; align-items: start; padding: 12px; font-size: 12px; line-height: 1.8; margin: 3px 0 18px; }
+.mission-verification .icon { width: 16px; height: 16px; margin-top: 3px; }
+.mission-verification.verified { color: #c7e4ac; border-color: #647e48; }
+.mission-history { font-size: 12px; line-height: 1.7; color: #a7c18e; }
+.reflection { padding: 0 0 18px; }
+.reflection p { font-size: 13px; line-height: 1.8; color: #b7cba7; }
+.reflection small { font-size: 11px; line-height: 1.7; color: #849f86; display: block; }
+.mission-complete { font-size: 12px; padding-bottom: 10px; line-height: 1.7; }
+.checkbox-art { flex-shrink: 0; }
+#next-mission { margin: 0 0 20px; font-size: 12px; }
+.experiment-card { border-top: 1px solid #3c513d; padding: 17px 0; }
+.experiment-card button { display: flex; gap: 8px; align-items: center; padding: 0; border: 0; background: none; color: #c5e59d; font-size: 14px; }
+.experiment-card button .icon { width: 17px; }
+.experiment-card p { font-size: 13px; line-height: 1.8; color: #aabd9b; }
+.lesson-link { margin-left: -20px; margin-right: -20px; }
+.lesson-link button { font-size: 12px; }
+.overlay-note { font-size: 10px; }
+.overlay-secondary { font-size: 12px; margin-top: 17px; }
+.ability-status { display: none; }
+.game-card:fullscreen { width: 100%; height: 100%; border: 0; border-radius: 0; display: flex; flex-direction: column; }
+.game-card:fullscreen .canvas-wrap { flex: 1; min-height: 0; height: auto; }
+.game-card:fullscreen .hud, .game-card:fullscreen .controls, .game-card:fullscreen .game-titlebar { flex-shrink: 0; }
+.game-card:fullscreen canvas { position: absolute; inset: 0; }
+@media (max-width: 1150px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 330px; }
+  .lesson-panel { padding: 20px 17px 0; }
+  .lesson-link { margin-left: -17px; margin-right: -17px; }
+  .code-preview code { font-size: 11px; }
+  .mission-story, .mission-goal { font-size: 14px; }
+  .start-card { min-width: 0; }
+}
+@media (max-width: 1000px) {
+  .workspace { display: block; }
+  .lesson-panel { display: block; max-width: 660px; margin: 20px auto 0; padding: 24px 22px 0; }
+  .lesson-link { margin-left: -22px; margin-right: -22px; }
+  .lesson-panel > h2 { margin-top: 15px; }
+  .code-preview code { font-size: 13px; }
+  .line-number { width: 34px; }
+  .mission-heading { border-top: 1px solid #34453a; padding-top: 20px; }
+  .level-tabs { margin: 15px 0 20px; }
+  .canvas-wrap { height: auto; aspect-ratio: 3 / 2; max-height: calc(100svh - 270px); min-height: 220px; }
+  canvas { aspect-ratio: auto; }
+  .developer-invite { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  .topbar { height: 64px; }
+  .page-heading { padding: 20px 0; }
+  h1 { font-size: 25px; }
+  .game-titlebar { padding: 0 8px; }
+  .game-actions .icon-button { padding: 5px; }
+  .canvas-wrap { height: auto; min-height: 0; max-height: none; }
+  .lesson-panel { padding: 22px 19px 0; }
+  .lesson-link { margin-left: -19px; margin-right: -19px; }
+  .code-preview code { font-size: 11px; }
+  .line-number { width: 22px; }
+  .start-card h2 { font-size: 21px; }
+  .overlay-secondary { font-size: 11px; margin-top: 10px; }
+  .overlay-note { display: none; }
+  .start-card p { margin-bottom: 12px; font-size: 10px; }
+  .start-card { padding: 16px; }
+  .developer-invite { padding: 17px; }
+}
+@media (min-width: 1001px) {
+  .lesson-panel { position: sticky; top: 16px; max-height: calc(100svh - 210px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a614b #172226; }
+}
+.lesson-panel > .panel-intro { margin-top: 12px; margin-bottom: 16px; font-size: 12px; }
+.mission-heading { padding-top: 13px; }
+.mission-story { margin-bottom: 8px; }
+.mission-goal { margin-top: 8px; margin-bottom: 16px; }
+.parameter-purpose { margin-bottom: 14px; }
+.lesson-panel .code-preview code { font-size: 13px; letter-spacing: -.35px; }
+
+/* Способность из ученического правила и мастерская идей. */
+.reward-status { position: absolute; left: 14px; top: 51px; z-index: 2; max-width: calc(100% - 28px); padding: 8px 12px; border: 1px solid #568c88; border-radius: 6px; background: #142e32e8; color: #b8e9dd; font-size: 12px; pointer-events: none; }
+.reward-status.shield-active { color: #bcf0ff; border-color: #79c8df; box-shadow: 0 0 16px #76dcff25; }
+.rule-source { padding: 0 12px; margin: 0; color: #c3e8e7; font: 12px/1.8 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-activity { border-top: 1px solid #45615a; padding: 20px 0; }
+.ai-activity h4 { font-size: 17px; color: #d6e9c8; margin: 12px 0; }
+.ai-activity p, .ai-activity label { font-size: 12px; line-height: 1.8; color: #adc4a7; }
+.ai-activity label { display: block; margin: 13px 0; }
+.ai-activity textarea { display: block; box-sizing: border-box; width: 100%; resize: vertical; min-height: 64px; margin-top: 6px; padding: 9px; border: 1px solid #496050; border-radius: 5px; background: #13221f; color: #dbe9ce; font: inherit; }
+.ai-activity textarea:focus { outline: 2px solid #8eb8a3; outline-offset: 2px; }
+.ai-activity textarea::placeholder { color: #799582; }
+.ai-activity small { display: block; color: #8ba58d; line-height: 1.7; font-size: 11px; }
+.ai-activity summary { cursor: pointer; color: #9eb9ae; font-size: 12px; margin: 12px 0; }
+.ai-activity pre { font: 12px/1.8 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #b6d1c9; }
+@media (max-width: 600px) { .reward-status { font-size: 10px; left: 8px; top: 38px; padding: 5px 8px; } }
