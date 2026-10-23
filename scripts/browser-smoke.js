@@ -10,12 +10,18 @@ import assert from 'node:assert/strict';
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const original = await readFile(resolve(sourceRoot,'student/config.js'),'utf8');
 const originalRules = await readFile(resolve(sourceRoot,'student/rules.js'),'utf8');
+const originalGuardian = await readFile(resolve(sourceRoot,'student/guardian.js'),'utf8');
+const originalMonsters = await readFile(resolve(sourceRoot,'student/monsters.js'),'utf8');
 const root = await mkdtemp(resolve(tmpdir(),'blockquest-browser-'));
 const artifacts = resolve(sourceRoot,'test-results');
 const configPath = resolve(root,'student/config.js');
 const baseline = await readFile(resolve(sourceRoot,'scripts/templates/config.js'),'utf8');
 const rulesPath = resolve(root,'student/rules.js');
 const rulesBaseline = await readFile(resolve(sourceRoot,'scripts/templates/rules.js'),'utf8');
+const guardianPath = resolve(root,'student/guardian.js');
+const guardianBaseline = await readFile(resolve(sourceRoot,'scripts/templates/guardian.js'),'utf8');
+const monstersPath = resolve(root,'student/monsters.js');
+const monstersBaseline = await readFile(resolve(sourceRoot,'scripts/templates/monsters.js'),'utf8');
 const shieldRule = 'export function crystalRule(crystals) {\n  if (crystals >= 3) {\n    return "shield";\n  }\n}\n';
 const healRule = shieldRule.replace('>= 3','>= 5').replace('shield','heal');
 const run = promisify(execFile);
@@ -61,10 +67,20 @@ async function finishExpedition({ stopAt, hurt = false, continueRun = false } = 
   walkTo(portal);api.step({},1/60);
   if(g.status!=='won')throw new Error(`Не выиграно: ${g.status}, ${g.collected} кристаллов`);
 }
+// Выполняется в браузере: герой рядом с хранителем бьёт импульсом с обычным откатом.
+function fightGuardian({ pulses = 99, collect = false } = {}) {
+  const api=window.__blockquest,g=api.game;g.status='playing';
+  for(const m of g.monsters)m.stun=1e6;
+  for(let k=0;k<pulses&&!g.guardian.defeated;k++){
+    g.player.x=g.guardian.x;g.player.y=g.guardian.y+45;g.player.invincible=99;
+    api.step({pulse:true},1/60);for(let i=0;i<60;i++)api.step({},1/60);
+  }
+  if(collect&&g.secret){g.player.x=g.secret.x;g.player.y=g.secret.y;api.step({},1/60);}
+}
 try {
-  for(const path of ['package.json','vite.config.js','index.html','games','public','student','scripts']) await cp(resolve(sourceRoot,path),resolve(root,path),{recursive:true});
+  for(const path of ['package.json','vite.config.js','index.html','games','public','student','scripts','teacher/lessons']) await cp(resolve(sourceRoot,path),resolve(root,path),{recursive:true});
   await symlink(resolve(sourceRoot,'node_modules'),resolve(root,'node_modules'),'dir');
-  await writeFile(configPath,baseline);await writeFile(rulesPath,rulesBaseline);await mkdir(artifacts,{recursive:true});
+  await writeFile(configPath,baseline);await writeFile(rulesPath,rulesBaseline);await writeFile(guardianPath,guardianBaseline);await writeFile(monstersPath,monstersBaseline);await mkdir(artifacts,{recursive:true});
   server=serve(['--port','4179']);await waitForServer('http://127.0.0.1:4179',server);
   browser=await chromium.launch({headless:true,...(process.env.BQ_CHROME_PATH?{executablePath:process.env.BQ_CHROME_PATH}:{channel:'chrome'})});
   const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
@@ -270,6 +286,108 @@ try {
   assert.equal(await fresh.locator('.lesson-panel').isVisible(),true);await fresh.close();
   console.log('✓ Стандартный режим пройден; прогресс/подсказки сохранены; повтор и пропуск вступления; 1280×720, 1366×768, 640px, 390px и полный экран');
 
+  await page.locator('[data-lesson="2"]').click();
+  await page.waitForFunction(()=>window.__blockquest.game.guardian?.name==='Хранитель');
+  assert.equal(await page.locator('#mission-count').textContent(),'0 / 3');
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.monsters[0].health),30,'В уроке 02 у слизней есть здоровье из monsters.js');
+  assert.ok((await page.locator('#config-preview').textContent()).includes('guardianName'));
+  assert.equal(await page.locator('#guardian-status').isVisible(),true);
+  await writeFile(guardianPath,guardianBaseline.replace('"Хранитель"','"Огненный страж"').replace('guardianHealth = 60','guardianHealth = 80'));
+  await page.waitForFunction(()=>window.__blockquest.game.guardian?.name==='Огненный страж'&&window.__blockquest.game.guardian.maxHealth===80);
+  assert.equal(await page.locator('#mission-complete').count(),0,'Хранителя нужно проверить ударом');
+  await page.evaluate(fightGuardian,{pulses:1});
+  await page.locator('#mission-complete').waitFor();
+  await writeFile(guardianPath,guardianBaseline.replace('"Хранитель"','"Огненный страж"').replace('guardianHealth = 60','guardianHealth = 80').replace('"stone"','"красный"').replace('"Кто посмел войти в моё логово?"','"Я " + guardianName + "!"'));
+  await page.waitForFunction(()=>window.__blockquest.game.guardian?.says==='Я Огненный страж!'&&window.__blockquest.game.guardian.color==='red');
+  assert.ok((await page.locator('.applied-values').textContent()).includes('guardianSays = "Я Огненный страж!"'));
+  await page.evaluate(fightGuardian,{pulses:1});
+  await page.locator('#mission-complete').waitFor();
+  await page.getByLabel('Проверил и могу объяснить').check();await page.locator('#next-mission').click();
+  const normalGuardian=guardianBaseline.replace('"Хранитель"','"Огненный страж"').replace('export const pulseDamage = 10;','const crystalPower = 5;\nexport const pulseDamage = crystalPower * 3;');
+  await writeFile(guardianPath,normalGuardian);
+  await page.waitForFunction(()=>window.__blockquest.game.guardianSettings?.pulseDamage===15);
+  assert.ok((await page.locator('.applied-values').textContent()).includes('pulseDamage = 15'));
+  await page.locator('#hit-prediction').fill('4');
+  await page.evaluate(fightGuardian);
+  await page.waitForFunction(()=>document.querySelector('.guardian-fight')?.textContent.includes('совпало'));
+  assert.equal(await page.evaluate(()=>window.__blockquest.guardianEvidence.hits),4);
+  await page.getByLabel('Проверил и могу объяснить').check();await page.locator('#next-mission').click();
+  const challengeGuardian=normalGuardian.replace('export const guardianReward = 50;','let reward = guardianHealth;\nreward = reward * 2;\nexport const guardianReward = reward;');
+  await writeFile(guardianPath,challengeGuardian);
+  await page.waitForFunction(()=>window.__blockquest.game.guardianSettings?.guardianReward===120);
+  const scoreBefore=await page.evaluate(()=>window.__blockquest.game.score);
+  await page.evaluate(fightGuardian,{collect:true});
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.score),scoreBefore+120);
+  await page.getByLabel('Проверил и могу объяснить').check();
+  assert.equal(await page.locator('#mission-count').textContent(),'3 / 3');
+  await page.screenshot({path:resolve(artifacts,'guardian.png')});
+  const rageGuardian=challengeGuardian.replace('export const rageDamage = 20;','export const rageDamage = guardianDamage * 2;').replace('  // Здесь появится правило ярости.','  if (health <= 20) {\n    return "rage";\n  }');
+  await writeFile(guardianPath,rageGuardian);
+  await page.waitForFunction(()=>{const g=window.__blockquest.game;return g.guardian&&!g.guardian.defeated&&g.guardianMood?.(10)==='rage';});
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.guardian.rage),false);
+  await page.evaluate(fightGuardian,{pulses:3});
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.guardian.rage),true);
+  assert.equal(await page.evaluate(()=>window.__blockquest.guardianEvidence.rageAt),15);
+  await page.waitForFunction(()=>document.querySelector('.bonus-card')?.textContent.includes('Ярость сработала при здоровье 15'));
+  assert.ok((await page.locator('.bonus-card').textContent()).includes('20 → 40'));
+  assert.ok((await page.locator('.applied-values').textContent()).includes('rageDamage = 40'));
+  assert.ok((await page.locator('#guardian-status').textContent()).includes('ЯРОСТЬ'));
+  await page.screenshot({path:resolve(artifacts,'guardian-rage.png')});
+  await writeFile(guardianPath,rageGuardian.replace('    return "rage";','    return "angry";'));
+  await page.waitForFunction(()=>window.__blockquest.game.guardianMood?.(10)==='angry');
+  await page.evaluate(fightGuardian,{pulses:3});
+  await page.locator('#config-warning').waitFor();
+  assert.ok((await page.locator('#config-warning').textContent()).includes('только "rage"'));
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.guardian.rage),false);
+  console.log('✓ Урок 02: хранитель появляется, имя и здоровье, урон через const и прогноз 4 удара, награда через let и секретный кристалл; ярость при здоровье 15 и подсказка для неизвестной команды');
+
+  expectedError=true;
+  await writeFile(guardianPath,guardianBaseline.replace('export const pulseDamage = 10;','export const pulseDamage = crystalPowr * 3;'));
+  await page.locator('#config-error').waitFor({state:'visible'});
+  assert.ok((await page.locator('#config-error').textContent()).includes('строка 13'));
+  assert.ok((await page.locator('#config-error').textContent()).includes('crystalPowr'));
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.status),'paused');
+  await writeFile(guardianPath,guardianBaseline.replace('export const pulseDamage = 10;','const power = 5;\npower = 10;\nexport const pulseDamage = power;'));
+  await page.waitForFunction(()=>document.querySelector('#config-error').textContent.includes('const нельзя изменить'));
+  assert.ok((await page.locator('#config-error').textContent()).includes('строка 14'));
+  await writeFile(guardianPath,guardianBaseline.replace('"Хранитель"','Огненный'));
+  await page.waitForFunction(()=>document.querySelector('#config-error').textContent.includes('возьми его в кавычки'));
+  await writeFile(guardianPath,guardianBaseline.replace('guardianDamage = 20;','guardianDamage = "2";'));
+  await page.waitForFunction(()=>document.querySelector('#config-error').textContent.includes('Тип значения не подходит'));
+  assert.ok((await page.locator('#config-error').textContent()).includes('строка 14'));
+  assert.ok((await page.locator('#config-error').textContent()).includes('текст "2"'));
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.guardianSettings.guardianDamage),20,'Неверный тип не попадает в игру');
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.status),'paused');
+  await writeFile(monstersPath,monstersBaseline.replace('monsterHealth = 30','monsterHealth = "10"'));
+  await page.waitForFunction(()=>window.__blockquest.game.monsters[0].maxHealth===30);
+  await writeFile(guardianPath,challengeGuardian);
+  await page.waitForFunction(()=>document.querySelector('#config-error').textContent.includes('student/monsters.js'));
+  assert.equal(await page.locator('#config-error').isVisible(),true,'Исправленный хранитель не скрывает ошибку monsters.js');
+  await writeFile(monstersPath,monstersBaseline.replace('monsterHealth = 30','monsterHealth = 10'));
+  await page.waitForFunction(()=>window.__blockquest.game.monsters[0].maxHealth===10);
+  await writeFile(guardianPath,challengeGuardian);
+  await page.locator('#config-error').waitFor({state:'hidden'});
+  expectedError=false;
+  const {stdout:guardianReset}=await run(process.execPath,[resolve(root,'scripts/reset-lesson.js'),'--yes','--exercise','guardian'],{cwd:root});
+  assert.ok(guardianReset.includes('guardian'));
+  assert.equal(await readFile(guardianPath,'utf8'),guardianBaseline);
+  assert.equal(await readFile(rulesPath,'utf8'),rulesBaseline,'Сброс хранителя не трогает правило');
+  await page.waitForFunction(()=>window.__blockquest.game.guardian?.name==='Хранитель');
+  await page.reload();
+  await page.waitForFunction(()=>window.__blockquest?.game.guardian?.name==='Хранитель');
+  assert.equal(await page.locator('[data-lesson="2"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('#mission-count').textContent(),'3 / 3');
+  for(const [width,height] of [[640,768],[390,844]]){
+    await page.setViewportSize({width,height});await page.evaluate(()=>scrollTo(0,0));
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Переполнение урока 02 ${width}`);
+    await page.screenshot({path:resolve(artifacts,`guardian-${width}.png`)});
+  }
+  await page.setViewportSize({width:1280,height:720});
+  await page.locator('[data-lesson="1"]').click();
+  assert.equal(await page.evaluate(()=>window.__blockquest.game.guardian),null);
+  assert.equal(await page.locator('#mission-count').textContent(),'3 / 3');
+  console.log('✓ Урок 02: ошибки неизвестного имени, изменения const, текста без кавычек и неверного типа (хранитель и monsters.js) со строкой; здоровье слизней; сброс хранителя; урок сохраняется после перезагрузки; 640px и 390px; возврат к уроку 01');
+
   await run(process.execPath,[resolve(root,'node_modules/vite/bin/vite.js'),'build'],{cwd:root});
   preview=serve(['preview','--port','4180']);await waitForServer('http://127.0.0.1:4180',preview);
   const production=await browser.newPage({viewport:{width:1280,height:720}});
@@ -288,4 +406,6 @@ finally {
   await rm(root,{recursive:true,force:true});
   assert.equal(await readFile(resolve(sourceRoot,'student/config.js'),'utf8'),original,'Исходный файл ученика должен остаться нетронутым');
   assert.equal(await readFile(resolve(sourceRoot,'student/rules.js'),'utf8'),originalRules,'Исходное правило ученика должно остаться нетронутым');
+  assert.equal(await readFile(resolve(sourceRoot,'student/guardian.js'),'utf8'),originalGuardian,'Исходный хранитель ученика должен остаться нетронутым');
+  assert.equal(await readFile(resolve(sourceRoot,'student/monsters.js'),'utf8'),originalMonsters,'Исходные слизни ученика должны остаться нетронутыми');
 }

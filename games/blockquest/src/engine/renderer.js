@@ -155,6 +155,97 @@ function beetle(ctx, m, time) {
   }
 }
 
+// Цвет хранителя выбирает ученик: [камень, блик, тень].
+const GUARDIAN_PALETTES = {
+  stone: ['#55597a', '#7e83a8', '#363952'], red: ['#8a3f3f', '#c0605a', '#552626'], blue: ['#3d5f9a', '#6d8fd0', '#263c66'],
+  green: ['#3f7a4f', '#6db07a', '#28503a'], gold: ['#9a7a2f', '#d4b15a', '#5e4a1c'], purple: ['#6a3f8a', '#9a6dc0', '#3f2656'],
+};
+
+// Хранитель — каменный страж с золотым кристаллом. Размер ученика масштабирует весь спрайт.
+function guardian(ctx, g, time) {
+  const bounce = Math.sin(time * 3 + g.phase) * 1.5;
+  shadow(ctx, g.x, g.y + 2, 16 * g.size, 5 * g.size);
+  ctx.save();
+  ctx.translate(Math.round(g.x), Math.round(g.y)); ctx.scale(g.size, g.size);
+  if (g.rage && !g.stun) {
+    const aura = ctx.createRadialGradient(g.x, g.y - 22 * g.size, 2, g.x, g.y - 22 * g.size, 40 * g.size);
+    aura.addColorStop(0, `rgba(255,90,70,${0.28 + Math.sin(time * 9) * 0.08})`); aura.addColorStop(1, 'rgba(255,90,70,0)');
+    ctx.fillStyle = aura; ctx.fillRect(g.x - 40 * g.size, g.y - 62 * g.size, 80 * g.size, 80 * g.size);
+  }
+  const palette = GUARDIAN_PALETTES[g.color] || GUARDIAN_PALETTES.stone;
+  const stone = g.stun ? '#6f7a7e' : g.rage ? '#7a4652' : palette[0], light = g.stun ? '#a3adae' : g.rage ? '#b0646c' : palette[1], dark = g.rage ? '#4a2a33' : palette[2];
+  const sway = Math.sin(time * 4) * 2;
+  rect(ctx, dark, -10, -9, 8, 10); rect(ctx, dark, 3, -9, 8, 10);
+  rect(ctx, stone, -14, -30 - bounce, 28, 22);
+  rect(ctx, light, -12, -32 - bounce, 24, 6);
+  rect(ctx, stone, -21, -28 - bounce + sway, 7, 15); rect(ctx, stone, 14, -28 - bounce - sway, 7, 15);
+  rect(ctx, light, -21, -28 - bounce + sway, 7, 3); rect(ctx, light, 14, -28 - bounce - sway, 7, 3);
+  rect(ctx, stone, -9, -44 - bounce, 18, 13);
+  rect(ctx, light, -9, -46 - bounce, 18, 4);
+  const eyes = g.stun ? '#c9d2cd' : g.rage ? '#ff4a3d' : g.chasing ? '#ffa071' : '#ffe9a8';
+  rect(ctx, eyes, -6, -39 - bounce, 4, 3); rect(ctx, eyes, 3, -39 - bounce, 4, 3);
+  ctx.beginPath(); ctx.moveTo(0, -27 - bounce); ctx.lineTo(5, -21 - bounce); ctx.lineTo(0, -14 - bounce); ctx.lineTo(-5, -21 - bounce); ctx.closePath();
+  ctx.fillStyle = g.stun ? '#d6d0b0' : '#ffd36e'; ctx.fill();
+  rect(ctx, '#fff6cf', -1, -24 - bounce, 2, 4);
+  if (g.flash > 0) { ctx.globalAlpha = g.flash * 3; rect(ctx, '#fff3d6', -21, -46 - bounce, 42, 47); ctx.globalAlpha = 1; }
+  if (g.stun) { const sx = Math.cos(time * 5) * 12; rect(ctx, '#f6e2a3', sx - 2, -54, 5, 3); rect(ctx, '#f6e2a3', -sx - 2, -51, 5, 3); }
+  ctx.restore();
+}
+
+// Имя и полоса здоровья рисуются поверх деревьев, чтобы ученик всегда видел результат своего кода.
+function wrapWords(ctx, text, width) {
+  const lines = [];
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const last = lines.at(-1);
+    if (last !== undefined && ctx.measureText(`${last} ${word}`).width <= width) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines.slice(0, 3);
+}
+// Фраза хранителя появляется в облачке, когда герой подходит к логову.
+function speechBubble(ctx, g, top) {
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  const lines = wrapWords(ctx, g.says, 190);
+  const width = Math.max(...lines.map(line => ctx.measureText(line).width)) + 16, height = lines.length * 13 + 9;
+  const x = Math.min(WIDTH - width / 2 - 4, Math.max(width / 2 + 4, g.x)), bottom = top - 20;
+  ctx.fillStyle = '#f7f1dcee'; ctx.fillRect(Math.round(x - width / 2), Math.round(bottom - height), Math.round(width), height);
+  ctx.beginPath(); ctx.moveTo(g.x - 5, bottom); ctx.lineTo(g.x + 5, bottom); ctx.lineTo(g.x, bottom + 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#2b2620';
+  lines.forEach((line, i) => ctx.fillText(line, x, bottom - height + 15 + i * 13));
+}
+
+function guardianLabel(ctx, g, player) {
+  const top = g.y - 48 * g.size - 10;
+  const width = 56, filled = g.maxHealth ? Math.round(width * g.health / g.maxHealth) : 0;
+  rect(ctx, '#1b2228cc', g.x - width / 2 - 2, top - 2, width + 4, 8);
+  rect(ctx, '#3d2b2b', g.x - width / 2, top, width, 4);
+  rect(ctx, g.rage ? '#ff5a4a' : '#ffb86b', g.x - width / 2, top, filled, 4);
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#1b2228'; ctx.fillText(g.name, g.x + 1, top - 5);
+  ctx.fillStyle = '#ffe9b8'; ctx.fillText(g.name, g.x, top - 6);
+  if (g.says && Math.hypot(player.x - g.x, player.y - g.y) < 180) speechBubble(ctx, g, top);
+}
+
+function drawSecret(ctx, secret, time) {
+  const { x } = secret, cy = secret.y - 18 + Math.sin(time * 3) * 3;
+  shadow(ctx, x, secret.y + 1, 11, 4);
+  const glow = ctx.createRadialGradient(x, cy, 0, x, cy, 34);
+  glow.addColorStop(0, '#ffe08a55'); glow.addColorStop(1, '#ffe08a00');
+  ctx.fillStyle = glow; ctx.fillRect(x - 34, cy - 34, 68, 68);
+  ctx.beginPath(); ctx.moveTo(x, cy - 15); ctx.lineTo(x + 10, cy - 3); ctx.lineTo(x, cy + 15); ctx.lineTo(x - 10, cy - 3); ctx.closePath();
+  ctx.fillStyle = '#c98a2c'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x, cy - 12); ctx.lineTo(x + 7, cy - 3); ctx.lineTo(x, cy + 12); ctx.closePath();
+  ctx.fillStyle = '#ffd36e'; ctx.fill();
+  rect(ctx, '#fff6cf', x - 3, cy - 8, 2, 7);
+}
+
+// Полоса здоровья появляется у раненого слизня или жука в уроке 02.
+function monsterHealthBar(ctx, m) {
+  if (!m.maxHealth || m.health >= m.maxHealth) return;
+  rect(ctx, '#1b2228cc', m.x - 13, m.y - 34, 26, 5);
+  rect(ctx, '#ff9b7a', m.x - 12, m.y - 33, Math.round(24 * m.health / m.maxHealth), 3);
+}
+
 function drawPortal(ctx, active, time) {
   const { x, y } = portal;
   shadow(ctx, x, y + 5, 32, 10);
@@ -248,10 +339,13 @@ export function createRenderer(canvas) {
       { y: portal.y, draw: () => drawPortal(ctx, game.collected >= game.config.crystalsToWin, time) },
       ...obstacles.filter(o => o.kind === 'tree').map(o => ({ y: o.y, draw: () => tree(ctx, o) })),
       ...game.crystals.filter(c => !c.taken).map(c => ({ y: c.y, draw: () => drawCrystal(ctx, c.x, c.y, motionPreference.matches ? 0 : time, c.id) })),
-      ...game.monsters.map(m => ({ y: m.y, draw: () => m.type === 'beetle' ? beetle(ctx, m, time) : slime(ctx, m, time) })),
+      ...game.monsters.filter(m => !m.dead).map(m => ({ y: m.y, draw: () => { m.type === 'beetle' ? beetle(ctx, m, time) : slime(ctx, m, time); monsterHealthBar(ctx, m); } })),
+      ...(game.guardian && !game.guardian.defeated ? [{ y: game.guardian.y, draw: () => guardian(ctx, game.guardian, time) }] : []),
+      ...(game.secret && !game.secret.taken ? [{ y: game.secret.y, draw: () => drawSecret(ctx, game.secret, motionPreference.matches ? 0 : time) }] : []),
       { y: game.player.y, draw: () => drawPlayer(ctx, game.player, time, game.dashTime) },
     ];
     drawables.sort((a, b) => a.y - b.y).forEach(o => o.draw());
+    if (game.guardian && !game.guardian.defeated) guardianLabel(ctx, game.guardian, game.player);
     if (game.pulse > 0) {
       const progress = 1 - game.pulse / 0.38;
       ctx.strokeStyle = `rgba(225,255,182,${1 - progress})`; ctx.lineWidth = 3;

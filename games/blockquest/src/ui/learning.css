@@ -128,3 +128,29 @@ canvas { height: 100%; object-fit: contain; }
 .ai-activity summary { cursor: pointer; color: #9eb9ae; font-size: 12px; margin: 12px 0; }
 .ai-activity pre { font: 12px/1.8 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #b6d1c9; }
 @media (max-width: 600px) { .reward-status { font-size: 10px; left: 8px; top: 38px; padding: 5px 8px; } }
+
+/* Урок 02: переключатель уроков, хранитель и расчёт удара. */
+.lesson-switch { display: flex; gap: 2px; padding: 2px; margin-left: auto; margin-right: 8px; border: 1px solid #32423c; border-radius: 5px; background: #121e20; }
+.lesson-switch button { padding: 5px 8px; border: 0; border-radius: 3px; background: none; color: #83988e; font-size: 11px; white-space: nowrap; }
+.lesson-switch button[aria-pressed=true] { background: #344631; color: #c6e7aa; }
+.lesson-switch button:focus-visible { outline: 2px solid #8eb8a3; outline-offset: 1px; }
+.guardian-status { position: absolute; right: 14px; top: 51px; z-index: 2; max-width: calc(100% - 28px); padding: 8px 12px; border: 1px solid #8c7346; border-radius: 6px; background: #2d2618e8; color: #f3dcae; font-size: 12px; pointer-events: none; overflow-wrap: anywhere; }
+.code-preview > .applied-values { height: auto; }
+.applied-values { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 12px 0; padding-top: 10px; border-top: 1px dashed #3a4c43; }
+.applied-values strong { width: 100%; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #8fa596; font-weight: 500; }
+.applied-values code { padding: 3px 7px; border-radius: 4px; background: #203127; color: #d3ecb8; font: 11px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
+.prediction { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; font-size: 13px; line-height: 1.6; color: #c3d6b5; }
+.prediction input { width: 72px; flex-shrink: 0; box-sizing: border-box; padding: 7px 9px; border: 1px solid #496050; border-radius: 5px; background: #13221f; color: #f0f7e3; font: 15px ui-monospace, monospace; text-align: center; }
+.prediction input:focus { outline: 2px solid #8eb8a3; outline-offset: 2px; }
+.guardian-fight { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid #c9a35c; background: #2a2618; color: #f0dcb2; font-size: 12px; line-height: 1.7; }
+.experiment-card code { font: 12px ui-monospace, monospace; color: #d6efc0; }
+@media (max-width: 600px) {
+  .guardian-status { font-size: 10px; right: 8px; top: 38px; padding: 5px 8px; max-width: 46%; }
+  .lesson-switch button { padding: 5px 6px; font-size: 10px; }
+}
+.bonus-card { border-top: 1px solid #5a3f3a; padding: 20px 0 6px; }
+.bonus-card .eyebrow { color: #e7a08f; font-size: 10px; letter-spacing: 1.2px; }
+.bonus-card h4 { font-size: 17px; color: #f2d2c8; margin: 10px 0; }
+.bonus-card > p, .bonus-card details p { font-size: 13px; line-height: 1.8; color: #c9b4ab; }
+.bonus-card summary { cursor: pointer; color: #e7b3a3; font-size: 12px; margin: 8px 0; }
+.bonus-card .mission-verification { margin-top: 12px; }

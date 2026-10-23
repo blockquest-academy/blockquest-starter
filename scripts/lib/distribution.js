@@ -53,8 +53,11 @@ export async function studentFiles(root) {
     await assertNoSymlink(root,path);
     files[path] = await readFile(resolve(root,path));
   }
-  const instructions = files['AGENTS.md'].toString('utf8');
+  // В проекте преподавателя AGENTS.md может быть закомментирован, чтобы не мешать разработке.
+  // Ученическая копия всегда получает действующие инструкции наставника.
+  const instructions = activeInstructions(files['AGENTS.md'].toString('utf8'));
   if (!instructions.trim()) throw new Error('Заполните инструкции AI в AGENTS.md перед созданием ученической копии.');
+  files['AGENTS.md'] = Buffer.from(instructions);
   const pkg = JSON.parse(files['package.json'].toString());
   for (const key of Object.keys(pkg.scripts || {})) if (['academy:package','academy:release'].includes(key)) delete pkg.scripts[key];
   files['package.json'] = Buffer.from(JSON.stringify(pkg,null,2)+'\n');
@@ -64,6 +67,10 @@ export async function studentFiles(root) {
     if (/^[A-Za-z0-9_-]+\.js$/.test(name)) files[`student/${name}`] = await readFile(resolve(root,`scripts/templates/${name}`));
   }
   return files;
+}
+export function activeInstructions(text) {
+  const wrapped = /^\s*<!--\s*([\s\S]*?)\s*-->\s*$/.exec(text);
+  return wrapped ? `${wrapped[1]}\n` : text;
 }
 export function installation(bundle) {
   return { schema:1, version:bundle.version, repository:bundle.repository,

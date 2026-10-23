@@ -18,4 +18,4 @@
 #config-error strong { font-size: 20px; font-weight: 600; }
 #config-error p { margin: 12px 0; }
 #config-error p:last-child { color: #a6b9ab; font-size: 12px; margin-bottom: 0; }
-#config-error code { display: block; padding: 12px; background: #111e21; border-radius: 5px; color: #c0ed8b; font-size: 12px; }
+#config-error code { display: block; padding: 12px; background: #111e21; border-radius: 5px; color: #c0ed8b; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
