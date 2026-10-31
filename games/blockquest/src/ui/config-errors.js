@@ -2,12 +2,13 @@ import './config-errors.css';
 
 // Подключается раньше игры: подсказка работает даже при ошибке в первом запуске.
 const panel = document.querySelector('#config-error');
-const FILE = /student[/\\](config|rules|guardian|monsters)\.js/;
+const FILE = /student[/\\](config|rules|guardian|monsters|forge)\.js/;
 const advice = {
   config: ['Проверь знак =, число и точку с запятой.', 'export const playerSpeed = 3;'],
   rules: ['Проверь скобки условия, имя crystals и кавычки команды.', 'crystals — число собранных кристаллов; команды: "shield" или "heal".'],
   guardian: ['Проверь кавычки у текста, знак = и точку с запятой.', 'export const guardianName = "Огненный страж";'],
   monsters: ['Проверь число, знак = и точку с запятой.', 'export const monsterHealth = 30;'],
+  forge: ['Проверь скобки функции: ( ) после имени и { } вокруг тела, а внутри return и точку с запятой.', 'export function armor(metal) {\n  return metal * 2;\n}'],
 };
 const constantAdvice = name => [`Имя ${name || 'с const'} объявлено через const: его значение нельзя изменить. Если значение должно меняться, объяви его через let.`, `let ${name || 'reward'} = 10;\n${name || 'reward'} = ${name || 'reward'} * 2;`];
 
@@ -32,7 +33,7 @@ export function showConfigError(err) {
   const constant = /^BQ_CONST:(.*)$/.exec(err.pluginCode || '');
   const [hint, example] = constant ? constantAdvice(constant[1]) : advice[kind] || [];
   showPanel({
-    title: err.initial ? 'Игра ещё не загрузилась' : constant ? 'const нельзя изменить' : !studentFile ? 'В файле есть ошибка' : kind === 'guardian' ? 'Давай поправим хранителя' : 'Давай поправим настройку',
+    title: err.initial ? 'Игра ещё не загрузилась' : constant ? 'const нельзя изменить' : !studentFile ? 'В файле есть ошибка' : kind === 'guardian' ? 'Давай поправим хранителя' : kind === 'forge' ? 'Давай поправим рецепт' : 'Давай поправим настройку',
     message: studentFile
       ? `Открой ${studentFile}${err.loc?.line ? `, строка ${err.loc.line}` : ''}. ${hint} Сохрани файл ещё раз.`
       : 'Проверь последнюю изменённую строку в student/ и сохрани файл. Если не получается, покажи ошибку преподавателю в терминале VS Code.',

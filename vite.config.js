@@ -8,7 +8,7 @@ export default defineConfig({
     async transform(code, id) {
       // Vite не всегда разбирает синтаксис обычного JS до отправки браузеру.
       // Здесь обеспечиваем стандартный экран ошибки с точной строкой для новичка.
-      const file = !id.includes('?') && /\/student\/(config|rules|guardian|monsters)\.js$/.exec(id)?.[1];
+      const file = !id.includes('?') && /\/student\/(config|rules|guardian|monsters|forge)\.js$/.exec(id)?.[1];
       if (!file) return;
       const result = await transformWithEsbuild(code, id, { loader: 'js' }).catch(error => {
         const location = error.errors?.[0]?.location;

@@ -1,7 +1,9 @@
-import { spawn, portal, crystalSpawns, monsterSpawns, beetleSpawns, moveBody } from '../world/island.js';
+import { spawn, portal, crystalSpawns, monsterSpawns, beetleSpawns, moveBody, FORGE_SITE, setForgeOpen, inForgeYard } from '../world/island.js';
 import { validateConfig } from './config.js';
 import { validateGuardian, spawnGuardian, GUARDIAN_DEFAULTS } from './guardian.js';
 import { validateMonsters } from './monsters.js';
+import { validateForge, WEAPONS, PULSE_STATS, FORGING_TIME, explainCall, describeShort } from './forge.js';
+import { SPIDER, spawnSpider, spiderDamage } from './spider.js';
 
 export function createGame(rawConfig, crystalRule) {
   const { config, warnings } = validateConfig(rawConfig);
@@ -9,7 +11,7 @@ export function createGame(rawConfig, crystalRule) {
     config, warnings, crystalRule, ruleWarning: '',
     reward: { used: false, action: null, at: null, fromStart: true, count: 0 },
     status: 'ready', time: 0, score: 0, collected: 0,
-    player: { ...spawn, radius: 9, health: config.playerHealth, shield: false, shieldRewardId: null, invincible: 0, facing: 1, moving: false },
+    player: { ...spawn, radius: 9, health: config.playerHealth, shield: false, shieldRewardId: null, invincible: 0, facing: 1, moving: false, webbed: 0 },
     monsters: [
       ...monsterSpawns.map((p, id) => ({ ...p, home: { ...p }, id, type: 'slime', radius: 10, stun: 0, phase: id * 1.7, health: null, maxHealth: null, dead: false, respawn: 0 })),
       ...beetleSpawns.map((p, index) => ({ ...p, home: { ...p }, id: monsterSpawns.length + index, type: 'beetle', radius: 11, stun: 0, phase: (monsterSpawns.length + index) * 1.7, health: null, maxHealth: null, dead: false, respawn: 0 })),
@@ -19,6 +21,10 @@ export function createGame(rawConfig, crystalRule) {
     dashDirection: { x: 1, y: 0 }, shake: 0, damageFlash: 0,
     guardian: null, guardianSettings: null, guardianWarnings: [], guardianMood: null, moodWarning: '', secret: null,
     monsterSettings: null, monsterWarnings: [],
+    // Урок 03: оружие из кузницы, кузнец, манекен и очередь проверок заказов.
+    forgeModule: null, forgeSettings: null, forgeWarnings: [], forgeFunctions: null, weapon: 'sword', weaponsReceived: false, pulseWeapon: null, pulseHits: [],
+    lightning: false, rack: {}, smith: null, dummy: null, dummyWarning: '', trials: [], trialTimer: 0, forging: null,
+    spider: null, webs: [], gateKey: false,
   };
 }
 
@@ -26,8 +32,82 @@ export function restartGame(game) {
   const next = createGame(game.config, game.crystalRule);
   if (game.guardianSettings) setGuardian(next, { ...game.guardianSettings, guardianMood: game.guardianMood });
   if (game.monsterSettings) setMonsters(next, game.monsterSettings);
+  if (game.forgeSettings) { setForge(next, game.forgeModule); Object.assign(next, { weapon: game.weapon, weaponsReceived: game.weaponsReceived, lightning: game.lightning, rack: { ...game.rack }, gateKey: game.gateKey }); next.smith.says = game.smith.says; }
   return next;
 }
+// Урок 03: каждое сохранение student/forge.js перековывает оружие и открывает тропу к кузнице.
+export function setForge(game, raw) {
+  const { settings, warnings } = validateForge(raw);
+  const forgeFunctions = Object.fromEntries(Object.entries(raw || {}).filter(([, value]) => typeof value === 'function'));
+  Object.assign(game, { forgeModule: raw, forgeSettings: settings, forgeWarnings: warnings, forgeFunctions, dummyWarning: '' });
+  game.smith ??= { ...FORGE_SITE.smith, strike: 0, mood: 'idle', says: '', celebrate: 0 };
+  game.dummy ??= { ...FORGE_SITE.dummy, wobble: 0, returns: [] };
+  game.dummy.returns = [];
+  // Вместе с кузницей на острове появляется паук у ворот в лес: сильное оружие получает цель.
+  game.spider ??= spawnSpider();
+  setForgeOpen(true);
+  return warnings;
+}
+export function removeForge(game) {
+  Object.assign(game, { forgeModule: null, forgeSettings: null, forgeWarnings: [], forgeFunctions: null, pulseWeapon: null, lightning: false, rack: {}, smith: null, dummy: null, dummyWarning: '', trials: [], forging: null, spider: null, webs: [], gateKey: false });
+  game.player.webbed = 0;
+  setForgeOpen(false);
+}
+// Перековка: кузнец раскаляет металл, бьёт в ритме и закаляет его — около 2,6 секунды.
+// Сохранение файла только передаёт заказ: кузнец ждёт, пока ученик вернётся в игру и нажмёт «Продолжить», —
+// так перековку точно увидят, а не пропустят на паузе за редактором.
+export function startForging(game, { trials = [], item = null, ok = true, after = null } = {}) {
+  if (!game.smith) return;
+  game.forging = { started: false, time: 0, duration: FORGING_TIME, nextStrike: 0.7, trials, item, ok, after };
+  game.trials = []; game.smith.mood = 'idle';
+}
+function finishForging(game) {
+  const job = game.forging; game.forging = null;
+  const anvil = FORGE_SITE.anvil;
+  for (let i = 0; i < 14; i++) game.particles.push({ x: anvil.x - 10 + Math.random() * 20, y: anvil.y - 20, vx: (Math.random() - 0.5) * 18, vy: -30 - Math.random() * 30, life: 0.9, color: '#e9f1f4' });
+  game.events.push({ type: 'forged', ok: job.ok });
+  if (job.after) setForgeStatus(game, job.after);
+  if (job.trials.length) queueTrials(game, job.trials);
+  if (job.item) smithCelebrate(game, job.item); else smithStrike(game, job.ok);
+}
+export function selectWeapon(game, weapon) {
+  if (!WEAPONS[weapon] || game.weapon === weapon) return;
+  game.weapon = weapon;
+  game.events.push({ type: 'weapon', weapon });
+}
+// Кузнец отвечает на сохранение файла ударом по наковальне; при ошибке горн мигает красным.
+export function smithStrike(game, ok = true) {
+  const s = game.smith; if (!s) return;
+  s.strike = 0.45; s.mood = ok ? 'idle' : 'sad';
+  burst(game, FORGE_SITE.anvil.x, FORGE_SITE.anvil.y - 18, ok ? '#ffd36e' : '#ff7a5a', ok ? 14 : 8);
+  game.events.push({ type: 'anvil', ok });
+}
+export function smithCelebrate(game, item) {
+  const s = game.smith; if (!s) return;
+  s.strike = 0.45; s.mood = 'happy'; s.celebrate = 1.6;
+  burst(game, FORGE_SITE.anvil.x, FORGE_SITE.anvil.y - 24, '#ffe28a', 34);
+  game.texts.push({ x: FORGE_SITE.hut.x, y: FORGE_SITE.hut.y - 70, text: `Заказ выполнен: ${item}!`, life: 2.4, color: '#ffe7a3' });
+  game.events.push({ type: 'order-done', item });
+}
+// Строки проверки заказа показываются над манекеном по одной, с ударом кузнеца на каждую.
+export function queueTrials(game, rows) {
+  if (!game.dummy) return;
+  game.trials = rows.map(row => ({ text: row.text, ok: row.ok }));
+  game.trialTimer = 0;
+}
+export const forgePending = game => Boolean(game.forging && !game.forging.started);
+export function setForgeStatus(game, { rack, lightning, says, mood } = {}) {
+  if (rack) game.rack = { ...rack };
+  if (lightning !== undefined) game.lightning = lightning;
+  if (game.smith) { if (says !== undefined) game.smith.says = says; if (mood && game.smith.celebrate <= 0) game.smith.mood = mood; }
+}
+// Урон удара: оружие, выданное кузнецом (урок 03), иначе pulseDamage хранителя (урок 02) или 10.
+const armed = game => Boolean(game.forgeSettings && game.weaponsReceived);
+function pulseDamage(game) {
+  if (armed(game)) return game.forgeSettings[WEAPONS[game.weapon].key];
+  return game.guardianSettings?.pulseDamage ?? GUARDIAN_DEFAULTS.pulseDamage;
+}
+const weaponStats = game => armed(game) ? WEAPONS[game.weapon] : PULSE_STATS;
 // Каждое сохранение student/guardian.js возрождает хранителя с новыми свойствами.
 export function setGuardian(game, raw) {
   const { settings, warnings } = validateGuardian(raw);
@@ -57,10 +137,11 @@ function setMonsterHealth(game, health) {
   }
 }
 function hurtMonster(game, m) {
-  // Импульс героя бьёт с силой pulseDamage из урока 02; без хранителя — обычные 10.
-  const damage = game.guardianSettings?.pulseDamage ?? GUARDIAN_DEFAULTS.pulseDamage;
+  const damage = pulseDamage(game);
   m.health = Math.max(0, m.health - damage);
+  game.pulseHits.push({ x: m.x, y: m.y - 14 });
   if (damage) game.texts.push({ x: m.x, y: m.y - 30, text: `-${damage}`, life: 0.9, color: '#ffd0a0' });
+  game.events.push({ type: 'monster-hit', monster: m.type, damage });
   if (m.health > 0) return;
   // Побеждённый монстр возвращается домой через 8 секунд: остров не пустеет.
   m.dead = true; m.respawn = 8;
@@ -197,6 +278,7 @@ function stepGame(game, input, dt) {
   for (const key of ['pulse', 'pulseCooldown', 'dashCooldown', 'dashTime', 'shake', 'damageFlash']) game[key] = Math.max(0, game[key] - dt);
   const p = game.player;
   p.invincible = Math.max(0, p.invincible - dt);
+  p.webbed = Math.max(0, p.webbed - dt);
   let x = Number(input.right || false) - Number(input.left || false);
   let y = Number(input.down || false) - Number(input.up || false);
   const magnitude = Math.hypot(x, y);
@@ -210,24 +292,37 @@ function stepGame(game, input, dt) {
     game.dashDirection = { x, y };
     burst(game, p.x, p.y, '#d4f89b', 6);
     game.events.push('dash');
+    // Рывок рвёт паутину паука.
+    if (p.webbed > 0) { p.webbed = 0; game.texts.push({ x: p.x, y: p.y - 50, text: 'Вырвался!', life: 1.2, color: '#e9f1f4' }); }
   }
   if (input.pulse && game.pulseCooldown === 0) {
+    const stats = weaponStats(game);
     game.pulse = 0.38;
-    game.pulseCooldown = 0.85;
-    game.events.push('pulse');
-    for (const m of game.monsters) if (!m.dead && distance(p, m) < 96) {
-      m.stun = 2.2;
+    game.pulseCooldown = stats.cooldown;
+    game.pulseHits = [];
+    game.pulseWeapon = armed(game) ? game.weapon : null;
+    game.events.push(game.pulseWeapon ? { type: 'pulse', weapon: game.pulseWeapon } : 'pulse');
+    // Оружие из кузницы отличается на вид: топор рубит с щепками, молот сотрясает землю.
+    if (game.pulseWeapon === 'axe') burst(game, p.x + p.facing * 30, p.y + 2, '#8a6a3a', 8);
+    if (game.pulseWeapon === 'hammer') { game.shake = Math.max(game.shake, 0.14); burst(game, p.x, p.y + 4, '#c9b98a', 12); }
+    if (game.rack.spark) burst(game, p.x + p.facing * 20, p.y - 16, '#ffe08a', 10);
+    for (const m of game.monsters) if (!m.dead && distance(p, m) < stats.reach) {
+      m.stun = 2.2 * stats.stun;
       const d = distance(p, m) || 1;
-      moveBody(m, (m.x - p.x) / d * 34, (m.y - p.y) / d * 34);
+      moveBody(m, (m.x - p.x) / d * stats.push, (m.y - p.y) / d * stats.push);
       burst(game, m.x, m.y, '#d9ffae', 6);
       if (m.maxHealth) hurtMonster(game, m);
     }
-    hitGuardian(game);
+    hitGuardian(game, stats);
+    hitSpider(game, stats);
+    hitDummy(game, stats);
   }
+  receiveWeapons(game);
+  tickForge(game, dt);
   if (game.dashTime > 0) {
     x = game.dashDirection.x; y = game.dashDirection.y;
   }
-  const speed = game.config.playerSpeed * 60 * (game.dashTime > 0 ? 2.8 : 1);
+  const speed = game.config.playerSpeed * 60 * (game.dashTime > 0 ? 2.8 : p.webbed > 0 ? SPIDER.webbedSlow : 1);
   moveBody(p, x * speed * dt, y * speed * dt);
 
   for (const c of game.crystals) if (!c.taken && distance(p, c) < 23) collectCrystal(game, c);
@@ -240,7 +335,9 @@ function stepGame(game, input, dt) {
     m.stun = Math.max(0, m.stun - dt);
     if (m.stun > 0) continue;
     const d = distance(p, m);
-    const chasing = d < 145;
+    // Во дворе кузницы перемирие: герой спокойно пишет функции и бьёт манекен.
+    const truce = inForgeYard(p);
+    const chasing = d < 145 && !truce;
     m.chasing = chasing;
     const target = chasing ? p : {
       x: m.home.x + Math.cos(game.time * 0.6 + m.phase) * 38,
@@ -252,18 +349,22 @@ function stepGame(game, input, dt) {
       const s = game.config.monsterSpeed * typeSpeed * 60 * (chasing ? 0.8 : 0.32) * dt;
       moveBody(m, (target.x - m.x) / td * s, (target.y - m.y) / td * s);
     }
-    if (distance(p, m) < p.radius + m.radius + 2) {
+    if (!truce && distance(p, m) < p.radius + m.radius + 2) {
       damagePlayer(game, 20);
       const nd = distance(p, m) || 1;
       moveBody(m, (m.x - p.x) / nd * 18, (m.y - p.y) / nd * 18);
     }
   }
   updateGuardian(game, dt);
+  updateSpider(game, dt);
   if (game.secret && !game.secret.taken && distance(p, game.secret) < 26) takeSecret(game);
   if (game.status === 'playing' && game.collected >= game.config.crystalsToWin && distance(p, portal) < 30) {
     game.status = 'won'; game.events.push('won');
     burst(game, p.x, p.y, '#d7ff9e', 40);
   }
+  updateEffects(game, dt);
+}
+function updateEffects(game, dt) {
   for (const part of game.particles) {
     part.x += part.vx * dt; part.y += part.vy * dt; part.vy += 55 * dt; part.life -= dt;
   }
@@ -272,14 +373,69 @@ function stepGame(game, input, dt) {
   game.texts = game.texts.filter(label => label.life > 0);
 }
 
-function hitGuardian(game) {
+// Манекен у кузницы не бьёт в ответ: удар по нему вызывает функцию ученика onHit и показывает её ответ.
+function hitDummy(game, stats) {
+  const d = game.dummy, p = game.player;
+  if (!d || distance(p, d) >= Math.max(64, stats.reach - 16)) return;
+  d.wobble = 0.5;
+  game.pulseHits.push({ x: d.x, y: d.y - 20 });
+  burst(game, d.x, d.y - 16, '#e8d79a', 8);
+  const fn = game.forgeFunctions?.onHit;
+  let value, failed = false;
+  if (fn) {
+    try { value = fn(pulseDamage(game)); }
+    catch (error) { failed = true; game.dummyWarning = `Не удалось выполнить onHit в student/forge.js: ${explainCall(error)}`; }
+  }
+  if (fn && !failed) { game.dummyWarning = ''; d.returns.push(value); if (d.returns.length > 20) d.returns.shift(); }
+  const shown = !fn || value === undefined ? '…' : failed ? 'ошибка' : describeShort(value);
+  game.texts.push({ x: d.x, y: d.y - 46, text: shown, life: 1.4, color: shown === '…' || failed ? '#d8dccf' : '#ffe7a3' });
+  game.events.push({ type: 'dummy-hit', value, missing: !fn, failed });
+}
+// Кузнец выдаёт оружие при первой встрече: до этого удар — обычный импульс.
+function receiveWeapons(game) {
+  const s = game.smith;
+  if (!s || game.weaponsReceived || distance(game.player, s) >= 64) return;
+  game.weaponsReceived = true; s.strike = 0.45;
+  burst(game, s.x, s.y - 30, '#ffe28a', 24);
+  game.texts.push({ x: s.x, y: s.y - 66, text: 'Держи: меч, топор, молот!', life: 2.4, color: '#ffe7a3' });
+  game.events.push('weapons-received');
+}
+// Жизнь кузницы: перековка, замах кузнеца, качание манекена и строки проверки. Идёт только пока игра идёт.
+export function tickForge(game, dt) {
+  const s = game.smith, d = game.dummy;
+  if (!s) return;
+  const job = game.forging;
+  if (job) {
+    if (!job.started) { job.started = true; game.events.push({ type: 'forging' }); }
+    job.time += dt;
+    if (job.time >= job.nextStrike && job.time < job.duration - 0.35) {
+      job.nextStrike += 0.38; s.strike = 0.38;
+      burst(game, FORGE_SITE.anvil.x, FORGE_SITE.anvil.y - 18, '#ffd36e', 10);
+      game.events.push({ type: 'anvil', ok: true });
+    }
+    if (job.time >= job.duration) finishForging(game);
+  }
+  s.strike = Math.max(0, s.strike - dt); s.celebrate = Math.max(0, s.celebrate - dt);
+  if (s.celebrate === 0 && s.mood === 'happy') s.mood = 'idle';
+  d.wobble = Math.max(0, d.wobble - dt);
+  if (!game.trials.length) return;
+  game.trialTimer -= dt;
+  if (game.trialTimer > 0) return;
+  const row = game.trials.shift();
+  game.trialTimer = 0.65; s.strike = 0.3; d.wobble = 0.35;
+  burst(game, FORGE_SITE.anvil.x, FORGE_SITE.anvil.y - 18, row.ok ? '#ffd36e' : '#ff7a5a', 6);
+  game.texts.push({ x: d.x, y: d.y - 46, text: row.text, life: 1.7, color: row.ok ? '#c8ffb0' : '#ff9c8a' });
+}
+
+function hitGuardian(game, stats = PULSE_STATS) {
   const g = game.guardian, p = game.player;
-  if (!g || g.defeated || distance(p, g) >= 96 + g.radius) return;
-  const damage = game.guardianSettings.pulseDamage;
+  if (!g || g.defeated || distance(p, g) >= stats.reach + g.radius) return;
+  const damage = pulseDamage(game);
+  game.pulseHits.push({ x: g.x, y: g.y - 22 * g.size });
   g.health = Math.max(0, g.health - damage); g.hits++; g.flash = 0.2;
-  g.stun = game.guardianSettings.guardianStunnable ? (g.rage ? 0.5 : 0.9) : 0;
-  const d = distance(p, g) || 1;
-  moveGuardian(g, (g.x - p.x) / d * 24, (g.y - p.y) / d * 24);
+  g.stun = game.guardianSettings.guardianStunnable ? (g.rage ? 0.5 : 0.9) * stats.stun : 0;
+  const d = distance(p, g) || 1, push = 24 * stats.push / PULSE_STATS.push;
+  moveGuardian(g, (g.x - p.x) / d * push, (g.y - p.y) / d * push);
   burst(game, g.x, g.y - 20 * g.size, '#ffd27a', 10);
   game.texts.push({ x: g.x, y: g.y - 40 * g.size - 12, text: damage ? `-${damage}` : '0 урона', life: 1.2, color: damage ? '#ffb27a' : '#d8dccf' });
   game.events.push({ type: 'guardian-hit', hits: g.hits, health: g.health });
@@ -321,6 +477,88 @@ function updateGuardian(game, dt) {
     const nd = distance(p, g) || 1;
     moveGuardian(g, (g.x - p.x) / nd * 18, (g.y - p.y) / nd * 18);
   }
+}
+
+// Паук у ворот: панцирь режет урон меча вдвое, оглушается коротко, рвётся к герою рывком и плюётся паутиной.
+function hitSpider(game, stats) {
+  const s = game.spider, p = game.player;
+  if (!s || s.defeated || distance(p, s) >= stats.reach + s.radius) return;
+  const raw = pulseDamage(game), weapon = game.pulseWeapon, damage = spiderDamage(raw, weapon);
+  game.pulseHits.push({ x: s.x, y: s.y - 14 });
+  s.health = Math.max(0, s.health - damage); s.hits++; s.flash = 0.2;
+  s.stun = (weapon === 'hammer' ? 0.8 : 0.4) * stats.stun; s.lunge = 0;
+  const d = distance(p, s) || 1, push = 18 * stats.push / PULSE_STATS.push;
+  moveGuardian(s, (s.x - p.x) / d * push, (s.y - p.y) / d * push);
+  burst(game, s.x, s.y - 12, '#c9a6ff', 10);
+  const glanced = damage < raw;
+  game.texts.push({ x: s.x, y: s.y - 44, text: damage ? `-${damage}${glanced ? ' · панцирь' : ''}` : 'панцирь', life: 1.2, color: glanced ? '#d8dccf' : '#ffb27a' });
+  game.events.push({ type: 'spider-hit', hits: s.hits, health: s.health, damage, weapon });
+  if (s.health > 0) return;
+  s.defeated = true; s.respawn = SPIDER.respawn;
+  burst(game, s.x, s.y - 12, '#c9a6ff', 36);
+  game.texts.push({ x: s.x, y: s.y - 56, text: 'Паук побеждён!', life: 2.2, color: '#e9dcff' });
+  if (!game.gateKey) {
+    game.gateKey = true;
+    game.texts.push({ x: s.x, y: s.y - 76, text: 'Ключ от ворот! Пригодится в лесу', life: 2.8, color: '#ffe7a3' });
+    game.events.push('gate-key');
+  }
+  game.events.push({ type: 'spider-defeated', hits: s.hits });
+}
+function updateSpider(game, dt) {
+  const s = game.spider, p = game.player;
+  if (!s) return;
+  if (s.defeated) {
+    // Паук возвращается к воротам через 25 секунд: бой можно повторить с другим оружием.
+    s.respawn -= dt;
+    if (s.respawn <= 0) Object.assign(s, { defeated: false, health: s.maxHealth, hits: 0, x: s.home.x, y: s.home.y, stun: 1, lungeCooldown: 1.5, webCooldown: 3 });
+    return;
+  }
+  s.flash = Math.max(0, s.flash - dt); s.lungeCooldown = Math.max(0, s.lungeCooldown - dt); s.webCooldown = Math.max(0, s.webCooldown - dt);
+  s.stun = Math.max(0, s.stun - dt);
+  if (s.stun > 0) return;
+  const d = distance(p, s);
+  s.chasing = d < SPIDER.sight && distance(p, s.home) < SPIDER.territory + 40;
+  if (s.chasing && Math.abs(p.x - s.x) > 4) s.facing = p.x > s.x ? 1 : -1;
+  if (s.lunge > 0) {
+    s.lunge = Math.max(0, s.lunge - dt);
+    const v = game.config.monsterSpeed * SPIDER.lungeSpeed * 60 * dt;
+    moveGuardian(s, s.lungeDirection.x * v, s.lungeDirection.y * v);
+  } else if (s.chasing) {
+    if (s.lungeCooldown === 0 && d < SPIDER.lungeRange && d > 30) {
+      s.lunge = SPIDER.lungeTime; s.lungeCooldown = SPIDER.lungeCooldown;
+      s.lungeDirection = { x: (p.x - s.x) / d, y: (p.y - s.y) / d };
+      game.events.push('spider-lunge');
+    } else {
+      const v = game.config.monsterSpeed * 1.1 * 60 * 0.8 * dt;
+      if (d > 3) moveGuardian(s, (p.x - s.x) / d * v, (p.y - s.y) / d * v);
+    }
+    if (s.webCooldown === 0 && d < SPIDER.webRange && d > 60) {
+      s.webCooldown = SPIDER.webCooldown;
+      game.webs.push({ x: s.x, y: s.y - 10, vx: (p.x - s.x) / d * SPIDER.webSpeed, vy: (p.y - 10 - s.y) / d * SPIDER.webSpeed, life: 1.4 });
+      game.events.push('web');
+    }
+  } else {
+    const target = { x: s.home.x + Math.cos(game.time * 0.7 + s.phase) * 30, y: s.home.y + Math.sin(game.time * 0.9 + s.phase) * 22 };
+    const td = distance(s, target);
+    if (td > 3) { const v = game.config.monsterSpeed * 60 * 0.3 * dt; moveGuardian(s, (target.x - s.x) / td * v, (target.y - s.y) / td * v); }
+  }
+  if (distance(p, s) < p.radius + s.radius + 2) {
+    const before = p.health;
+    damagePlayer(game, SPIDER.damage);
+    if (p.health < before) game.texts.push({ x: p.x, y: p.y - 46, text: `-${before - p.health}`, life: 1.1, color: '#d9b8ff' });
+    const nd = distance(p, s) || 1;
+    moveGuardian(s, (s.x - p.x) / nd * 22, (s.y - p.y) / nd * 22);
+  }
+  for (const web of game.webs) {
+    web.x += web.vx * dt; web.y += web.vy * dt; web.life -= dt;
+    if (web.life > 0 && Math.hypot(web.x - p.x, web.y - (p.y - 10)) < 16 && game.dashTime === 0) {
+      web.life = 0;
+      if (p.webbed === 0) game.texts.push({ x: p.x, y: p.y - 52, text: 'Паутина! Shift — вырваться', life: 1.6, color: '#e9f1f4' });
+      p.webbed = SPIDER.webbedTime;
+      game.events.push('webbed');
+    }
+  }
+  game.webs = game.webs.filter(web => web.life > 0);
 }
 
 // Большой хранитель сталкивается с деревьями как обычный: размер меняет вид и зону касания.

@@ -8,6 +8,8 @@ export function createLearningState(raw = {}, legacy = {}) {
     experimentOpen: raw.experimentOpen === true,
     aiNotes: Object.fromEntries(['idea', 'suggestion', 'test'].map(key => [key, typeof raw.aiNotes?.[key] === 'string' ? raw.aiNotes[key].slice(0, 2000) : ''])),
     prediction: typeof raw.prediction === 'string' ? raw.prediction.slice(0, 6) : '',
+    // Урок 03: кузнец уже выдал оружие — после перезагрузки страницы идти к нему снова не нужно.
+    received: raw.received === true,
     hints: {}, progress: {},
   };
   for (const tier of tiers) {

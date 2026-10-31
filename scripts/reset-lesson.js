@@ -5,9 +5,11 @@ import { createInterface } from 'node:readline/promises';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 
-const EXERCISES = ['all', 'config', 'rules', 'guardian', 'monsters'];
-const exerciseError = 'Задание: --exercise config, rules, guardian, monsters или all.';
-const LESSON_02 = ['guardian', 'monsters'];
+const EXERCISES = ['all', 'config', 'rules', 'guardian', 'monsters', 'forge'];
+const exerciseError = 'Задание: --exercise config, rules, guardian, monsters, forge или all.';
+// Файлы уроков 02 и 03 появляются в проекте позже урока 01; имя резервной копии — по уроку.
+const LATER_LESSONS = { guardian: 'lesson-02', monsters: 'lesson-02', forge: 'lesson-03' };
+const LESSON_02 = Object.keys(LATER_LESSONS);
 async function optionalFile(path) {
   try { return await readFile(path); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
@@ -15,7 +17,7 @@ async function optionalFile(path) {
 export async function resetLesson(root, { confirmed = false, exercise = 'all' } = {}) {
   if (!confirmed) throw new Error('Сброс требует подтверждения.');
   if (!EXERCISES.includes(exercise)) throw new Error(exerciseError);
-  // Файлы урока 02 входят в полный сброс, только если их шаблоны уже есть в проекте.
+  // Файлы уроков 02 и 03 входят в полный сброс, только если их шаблоны уже есть в проекте.
   const lesson02 = [];
   for (const name of LESSON_02) if (await optionalFile(resolve(root, `scripts/templates/${name}.js`))) lesson02.push(name);
   const names = exercise === 'all' ? ['config', 'rules', ...lesson02] : [exercise];
@@ -26,7 +28,7 @@ export async function resetLesson(root, { confirmed = false, exercise = 'all' } 
     baseline: await readFile(resolve(root, `scripts/templates/${name}.js`)),
   })));
   const stamp = new Date().toISOString().replaceAll(':', '-');
-  const backup = resolve(root, 'backups', `${LESSON_02.includes(exercise) ? 'lesson-02' : 'lesson-01'}-${stamp}-${randomUUID().slice(0, 8)}`);
+  const backup = resolve(root, 'backups', `${LATER_LESSONS[exercise] ?? 'lesson-01'}-${stamp}-${randomUUID().slice(0, 8)}`);
   await mkdir(backup, { recursive: true });
   for (const file of files) if (file.original) await writeFile(resolve(backup, `${file.name}.js`), file.original, { flag: 'wx' });
   const replaced = [];

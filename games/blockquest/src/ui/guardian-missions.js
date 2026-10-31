@@ -58,7 +58,7 @@ export function evaluateGuardianMission(level, settings, source, evidence, warni
 }
 
 // Урок по умолчанию задаёт преподаватель ссылкой в teacher/lessons/current.md.
-export const LESSONS = [1, 2];
+export const LESSONS = [1, 2, 3];
 export function parseCurrentLesson(text = '') {
   const lesson = Number(/lesson-(\d+)\.md/.exec(text)?.[1]);
   return LESSONS.includes(lesson) ? lesson : 1;
