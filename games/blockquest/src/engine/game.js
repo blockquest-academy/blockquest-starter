@@ -1,4 +1,6 @@
-import { spawn, portal, crystalSpawns, monsterSpawns, beetleSpawns, moveBody, FORGE_SITE, setForgeOpen, inForgeYard } from '../world/island.js';
+import { spawn, portal, crystalSpawns, monsterSpawns, beetleSpawns, moveBody, FORGE_SITE, setForgeOpen, inForgeYard, setArea } from '../world/island.js';
+import { FOREST_ENTRY, FOREST_EXIT_X } from '../world/forest.js';
+import { validateForest, lanternsFrom, inLight, lanternLighting, PHASE_STATS, PHASE_LABEL, TREANT, spawnTreant, phaseFor, saysFor } from './forest.js';
 import { validateConfig } from './config.js';
 import { validateGuardian, spawnGuardian, GUARDIAN_DEFAULTS } from './guardian.js';
 import { validateMonsters } from './monsters.js';
@@ -25,6 +27,8 @@ export function createGame(rawConfig, crystalRule) {
     forgeModule: null, forgeSettings: null, forgeWarnings: [], forgeFunctions: null, weapon: 'sword', weaponsReceived: false, pulseWeapon: null, pulseHits: [],
     lightning: false, rack: {}, smith: null, dummy: null, dummyWarning: '', trials: [], trialTimer: 0, forging: null,
     spider: null, webs: [], gateKey: false,
+    // Урок 04: лес за воротами — отдельная область; фонари, Древень и его фаза по функции ученика.
+    area: 'island', forestModule: null, forestSettings: null, forestWarnings: [], forestFunctions: null, lanterns: [], treant: null, phaseWarning: '', gateOpen: false, forestGlow: 0, forestVisits: 0,
   };
 }
 
@@ -33,6 +37,8 @@ export function restartGame(game) {
   if (game.guardianSettings) setGuardian(next, { ...game.guardianSettings, guardianMood: game.guardianMood });
   if (game.monsterSettings) setMonsters(next, game.monsterSettings);
   if (game.forgeSettings) { setForge(next, game.forgeModule); Object.assign(next, { weapon: game.weapon, weaponsReceived: game.weaponsReceived, lightning: game.lightning, rack: { ...game.rack }, gateKey: game.gateKey }); next.smith.says = game.smith.says; }
+  // Новая попытка из леса начинается у входа в лес: до Древня не нужно идти через весь остров.
+  if (game.forestSettings) { setForest(next, game.forestModule); if (game.area === 'forest') enterForest(next, { quiet: true }); }
   return next;
 }
 // Урок 03: каждое сохранение student/forge.js перековывает оружие и открывает тропу к кузнице.
@@ -43,8 +49,8 @@ export function setForge(game, raw) {
   game.smith ??= { ...FORGE_SITE.smith, strike: 0, mood: 'idle', says: '', celebrate: 0 };
   game.dummy ??= { ...FORGE_SITE.dummy, wobble: 0, returns: [] };
   game.dummy.returns = [];
-  // Вместе с кузницей на острове появляется паук у ворот в лес: сильное оружие получает цель.
-  game.spider ??= spawnSpider();
+  // Вместе с кузницей на острове появляется паук у ворот в лес: сильное оружие получает цель. В уроке 04 ворота открыты, паук ушёл.
+  if (!game.gateOpen) game.spider ??= spawnSpider();
   setForgeOpen(true);
   return warnings;
 }
@@ -275,6 +281,8 @@ export function updateGame(game, input, delta) {
 function stepGame(game, input, dt) {
   if (game.status !== 'playing') return;
   game.time += dt;
+  setArea(game.area);
+  const forest = game.area === 'forest';
   for (const key of ['pulse', 'pulseCooldown', 'dashCooldown', 'dashTime', 'shake', 'damageFlash']) game[key] = Math.max(0, game[key] - dt);
   const p = game.player;
   p.invincible = Math.max(0, p.invincible - dt);
@@ -306,24 +314,28 @@ function stepGame(game, input, dt) {
     if (game.pulseWeapon === 'axe') burst(game, p.x + p.facing * 30, p.y + 2, '#8a6a3a', 8);
     if (game.pulseWeapon === 'hammer') { game.shake = Math.max(game.shake, 0.14); burst(game, p.x, p.y + 4, '#c9b98a', 12); }
     if (game.rack.spark) burst(game, p.x + p.facing * 20, p.y - 16, '#ffe08a', 10);
-    for (const m of game.monsters) if (!m.dead && distance(p, m) < stats.reach) {
-      m.stun = 2.2 * stats.stun;
-      const d = distance(p, m) || 1;
-      moveBody(m, (m.x - p.x) / d * stats.push, (m.y - p.y) / d * stats.push);
-      burst(game, m.x, m.y, '#d9ffae', 6);
-      if (m.maxHealth) hurtMonster(game, m);
+    if (forest) hitTreant(game, stats);
+    else {
+      for (const m of game.monsters) if (!m.dead && distance(p, m) < stats.reach) {
+        m.stun = 2.2 * stats.stun;
+        const d = distance(p, m) || 1;
+        moveBody(m, (m.x - p.x) / d * stats.push, (m.y - p.y) / d * stats.push);
+        burst(game, m.x, m.y, '#d9ffae', 6);
+        if (m.maxHealth) hurtMonster(game, m);
+      }
+      hitGuardian(game, stats);
+      hitSpider(game, stats);
+      hitDummy(game, stats);
     }
-    hitGuardian(game, stats);
-    hitSpider(game, stats);
-    hitDummy(game, stats);
   }
-  receiveWeapons(game);
-  tickForge(game, dt);
+  if (!forest) { receiveWeapons(game); tickForge(game, dt); }
   if (game.dashTime > 0) {
     x = game.dashDirection.x; y = game.dashDirection.y;
   }
   const speed = game.config.playerSpeed * 60 * (game.dashTime > 0 ? 2.8 : p.webbed > 0 ? SPIDER.webbedSlow : 1);
   moveBody(p, x * speed * dt, y * speed * dt);
+  // В лесу живут только Древень и фонари: остров ждёт возвращения героя таким, каким он его оставил.
+  if (forest) { updateForest(game, dt); updateEffects(game, dt); return; }
 
   for (const c of game.crystals) if (!c.taken && distance(p, c) < 23) collectCrystal(game, c);
   for (const m of game.monsters) {
@@ -362,6 +374,7 @@ function stepGame(game, input, dt) {
     game.status = 'won'; game.events.push('won');
     burst(game, p.x, p.y, '#d7ff9e', 40);
   }
+  if (game.gateOpen && distance(p, FORGE_SITE.gate) < 34) enterForest(game);
   updateEffects(game, dt);
 }
 function updateEffects(game, dt) {
@@ -561,6 +574,148 @@ function updateSpider(game, dt) {
   game.webs = game.webs.filter(web => web.life > 0);
 }
 
+// Урок 04: лес. Сохранение student/forest.js зажигает фонари и открывает ворота; Древень ждёт на поляне.
+export function setForest(game, raw) {
+  const { settings, warnings } = validateForest(raw);
+  const forestFunctions = Object.fromEntries(Object.entries(raw || {}).filter(([, value]) => typeof value === 'function'));
+  Object.assign(game, { forestModule: raw, forestSettings: settings, forestWarnings: warnings, forestFunctions, phaseWarning: '', gateOpen: true, lanterns: lanternsFrom(settings) });
+  // Ворота открыты: паук урока 03 больше не стережёт их, путь в лес свободен.
+  game.spider = null; game.webs = []; game.player.webbed = 0;
+  game.treant ??= spawnTreant();
+  updateTreantPhase(game, { announce: false });
+  game.treant.says = saysFor(game.forestFunctions, game.treant.phase);
+  return warnings;
+}
+export function removeForest(game) {
+  if (game.area === 'forest') leaveForest(game, { quiet: true });
+  Object.assign(game, { forestModule: null, forestSettings: null, forestWarnings: [], forestFunctions: null, lanterns: [], treant: null, phaseWarning: '', gateOpen: false, forestGlow: 0 });
+  if (game.forgeSettings) game.spider ??= spawnSpider();
+}
+export function enterForest(game, { quiet = false } = {}) {
+  game.area = 'forest'; setArea('forest');
+  Object.assign(game.player, { x: FOREST_ENTRY.x, y: FOREST_ENTRY.y, facing: 1, webbed: 0 });
+  game.webs = []; game.pulse = 0; game.dashTime = 0;
+  if (game.treant) Object.assign(game.treant, { chasing: false, waiting: false });
+  if (quiet) return;
+  game.forestVisits++;
+  game.texts.push({ x: FOREST_ENTRY.x + 70, y: FOREST_ENTRY.y - 44, text: 'Лес. Спасение — в свете фонарей', life: 3, color: '#dff5c8' });
+  game.events.push('forest-enter');
+}
+export function leaveForest(game, { quiet = false } = {}) {
+  game.area = 'island'; setArea('island');
+  if (game.treant) Object.assign(game.treant, { chasing: false, waiting: false });
+  Object.assign(game.player, { x: FORGE_SITE.gate.x - 48, y: FORGE_SITE.gate.y + 6, facing: -1 });
+  if (!quiet) game.events.push('forest-leave');
+}
+export const playerInLight = game => game.area === 'forest' && inLight(game.lanterns, game.player);
+// Фаза по функции ученика: проверяется при появлении и после каждого удара. Смена фазы видна и слышна.
+export function updateTreantPhase(game, { announce = true } = {}) {
+  const t = game.treant; if (!t) return;
+  const { phase, warning } = phaseFor(game.forestFunctions, t.health);
+  game.phaseWarning = warning;
+  if (phase === t.phase) return;
+  const from = t.phase; t.phase = phase; t.says = saysFor(game.forestFunctions, phase);
+  if (phase === 'giant') t.grow = 0.8;
+  if (!announce) return;
+  const color = phase === 'angry' ? '#ff8f7a' : phase === 'giant' ? '#c8ffb0' : '#bfe6ff';
+  burst(game, t.x, t.y - 30, color, 28);
+  game.texts.push({ x: t.x, y: t.y - 76, text: `${PHASE_LABEL[phase].toUpperCase()} · "${phase}"`, life: 2.2, color });
+  game.events.push({ type: 'treant-phase', from, to: phase, health: t.health });
+}
+function hitTreant(game, stats) {
+  const t = game.treant, p = game.player;
+  if (!t || t.defeated) return;
+  const scale = PHASE_STATS[t.phase].scale;
+  if (distance(p, t) >= stats.reach + t.radius * scale) return;
+  // Из круга света удары по Древню не проходят: свет — убежище, а не укрытие для стрельбы.
+  if (inLight(game.lanterns, p)) { game.texts.push({ x: p.x, y: p.y - 52, text: 'Выйди из круга, чтобы бить', life: 1.4, color: '#dff5c8' }); return; }
+  const damage = pulseDamage(game);
+  game.pulseHits.push({ x: t.x, y: t.y - 30 * scale });
+  // Древень не оглушается: удар только вспыхивает и чуть отодвигает его, погоня продолжается.
+  t.health = Math.max(0, t.health - damage); t.hits++; t.flash = 0.2; t.wobble = 0.5;
+  const d = distance(p, t) || 1, push = 10 * stats.push / PULSE_STATS.push;
+  moveGuardian(t, (t.x - p.x) / d * push, (t.y - p.y) / d * push);
+  burst(game, t.x, t.y - 24 * scale, '#9fd8a0', 10);
+  game.texts.push({ x: t.x, y: t.y - 56 * scale, text: damage ? `-${damage} · осталось ${t.health}` : '0 урона', life: 1.3, color: damage ? '#ffb27a' : '#d8dccf' });
+  game.events.push({ type: 'treant-hit', hits: t.hits, health: t.health, damage });
+  if (t.health > 0) { updateTreantPhase(game); return; }
+  t.defeated = true; t.respawn = TREANT.respawn;
+  game.score += TREANT.reward; game.forestGlow = 1;
+  burst(game, t.x, t.y - 30 * scale, '#ffe28a', 44);
+  game.texts.push({ x: t.x, y: t.y - 74 * scale, text: `Древень побеждён! +${TREANT.reward}`, life: 2.6, color: '#ffe7a3' });
+  game.events.push({ type: 'treant-defeated', hits: t.hits });
+}
+// Древень: заметив героя, гонится по всему лесу со скоростью героя. Круг света — убежище, не башня:
+// пока герой в свете, Древень отходит дальше любого оружия и ждёт; бить его из света нельзя.
+// Касание бьёт по фазе; после победы он возвращается через 20 секунд.
+function updateForest(game, dt) {
+  const p = game.player, t = game.treant;
+  game.forestGlow = Math.max(0, game.forestGlow - dt / 25);
+  if (p.x < FOREST_EXIT_X) { leaveForest(game); return; }
+  if (!t) return;
+  t.flash = Math.max(0, t.flash - dt); t.wobble = Math.max(0, t.wobble - dt); t.grow = Math.max(0, t.grow - dt);
+  if (t.defeated) {
+    t.respawn -= dt;
+    if (t.respawn <= 0) {
+      Object.assign(t, { defeated: false, health: t.maxHealth, hits: 0, x: t.home.x, y: t.home.y, stun: 0, chasing: false });
+      updateTreantPhase(game, { announce: false }); t.says = saysFor(game.forestFunctions, t.phase);
+    }
+    return;
+  }
+  t.stun = Math.max(0, t.stun - dt);
+  if (t.stun > 0) return;
+  const stats = PHASE_STATS[t.phase];
+  const lit = inLight(game.lanterns, p);
+  // Замечает героя и в свете: тогда сразу отступает за край досягаемости и ждёт, когда тот выйдет.
+  if (!t.chasing && distance(p, t) < TREANT.sight) t.chasing = true;
+  if (t.chasing && Math.abs(p.x - t.x) > 4) t.facing = p.x > t.x ? 1 : -1;
+  const chaseSpeed = game.config.playerSpeed * 60 * stats.chase * dt;
+  const refuge = lanternLighting(game.lanterns, p);
+  const inside = lanternLighting(game.lanterns, t);
+  t.waiting = false;
+  if (refuge && t.chasing) {
+    // Герой в круге: Древень отступает за край досягаемости оружия и переминается, не спуская глаз.
+    const keep = refuge.radius + TREANT.standoff, d = distance(t, refuge) || 1;
+    if (d < keep) slideBody(t, (t.x - refuge.x) / d, (t.y - refuge.y) / d, chaseSpeed);
+    else moveGuardian(t, Math.sin(game.time * 3) * 0.8, 0);
+    t.waiting = true;
+  } else if (inside) {
+    // Оказался в свете (герой отступил в круг вплотную): выходит из круга прочь от фонаря, обходя чащу.
+    const away = distance(t, inside) || 1;
+    slideBody(t, (t.x - inside.x) / away, (t.y - inside.y) / away, chaseSpeed);
+    t.waiting = true;
+  } else if (t.chasing) {
+    const td = distance(t, p);
+    if (td > 3) {
+      const ux = (p.x - t.x) / td, uy = (p.y - t.y) / td;
+      // Следующий шаг завёл бы в круг света — стоит у границы и топчется.
+      if (lanternLighting(game.lanterns, { x: t.x + ux * chaseSpeed, y: t.y + uy * chaseSpeed })) { t.waiting = true; moveGuardian(t, Math.sin(game.time * 4) * 0.8, 0); }
+      else slideBody(t, ux, uy, chaseSpeed);
+    }
+  } else {
+    const target = { x: t.home.x + Math.cos(game.time * 0.4) * 20, y: t.home.y + Math.sin(game.time * 0.5) * 14 };
+    const td = distance(t, target);
+    if (td > 3) { const s = game.config.monsterSpeed * stats.speed * 60 * 0.25 * dt; moveGuardian(t, (target.x - t.x) / td * s, (target.y - t.y) / td * s); }
+  }
+  if (!lit && distance(p, t) < p.radius + t.radius * stats.scale + 2) {
+    const damage = Math.round(TREANT.damage * stats.damage), before = p.health;
+    damagePlayer(game, damage);
+    if (p.health < before) game.texts.push({ x: p.x, y: p.y - 46, text: `-${before - p.health}`, life: 1.1, color: t.phase === 'calm' ? '#c8e6b0' : '#ff8f7a' });
+    const nd = distance(p, t) || 1;
+    moveGuardian(t, (t.x - p.x) / nd * 18, (t.y - p.y) / nd * 18);
+  }
+}
+
+// Шаг в сторону цели; если чаща или дерево не пускают — скользит вдоль препятствия, чтобы не застрять.
+function slideBody(g, ux, uy, step) {
+  const sx = g.x, sy = g.y;
+  moveGuardian(g, ux * step, uy * step);
+  if (Math.hypot(g.x - sx, g.y - sy) >= step * 0.5) return;
+  for (const [px, py] of [[-uy, ux], [uy, -ux]]) {
+    moveGuardian(g, px * step, py * step);
+    if (Math.hypot(g.x - sx, g.y - sy) >= step * 0.5) return;
+  }
+}
 // Большой хранитель сталкивается с деревьями как обычный: размер меняет вид и зону касания.
 function moveGuardian(g, dx, dy) {
   const body = { x: g.x, y: g.y, radius: g.bodyRadius };

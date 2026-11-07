@@ -5,10 +5,10 @@ import { createInterface } from 'node:readline/promises';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 
-const EXERCISES = ['all', 'config', 'rules', 'guardian', 'monsters', 'forge'];
-const exerciseError = 'Задание: --exercise config, rules, guardian, monsters, forge или all.';
-// Файлы уроков 02 и 03 появляются в проекте позже урока 01; имя резервной копии — по уроку.
-const LATER_LESSONS = { guardian: 'lesson-02', monsters: 'lesson-02', forge: 'lesson-03' };
+const EXERCISES = ['all', 'config', 'rules', 'guardian', 'monsters', 'forge', 'forest'];
+const exerciseError = 'Задание: --exercise config, rules, guardian, monsters, forge, forest или all.';
+// Файлы уроков 02–04 появляются в проекте позже урока 01; имя резервной копии — по уроку.
+const LATER_LESSONS = { guardian: 'lesson-02', monsters: 'lesson-02', forge: 'lesson-03', forest: 'lesson-04' };
 const LESSON_02 = Object.keys(LATER_LESSONS);
 async function optionalFile(path) {
   try { return await readFile(path); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }

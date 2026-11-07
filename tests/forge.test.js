@@ -321,7 +321,7 @@ test('маршруты урока 03 смотрят на рецепт, зака�
   const stuck = forgeState(recipe, evaluateOrders({ ...solved, onHit: () => 1 }, recipe, [1, 1]));
   assert.deepEqual(evaluateForgeMission('challenge', stuck, fresh), { configured: true, tested: false });
   assert.deepEqual(Object.keys(forgeMissions), ['easy', 'normal', 'challenge']);
-  assert.deepEqual(LESSONS, [1, 2, 3]); assert.equal(parseCurrentLesson('[урок 03](lesson-03.md)'), 3);
+  assert.deepEqual(LESSONS, [1, 2, 3, 4]); assert.equal(parseCurrentLesson('[урок 03](lesson-03.md)'), 3); assert.equal(parseCurrentLesson('[урок 04](lesson-04.md)'), 4);
 });
 test('сброс кузницы возвращает заготовку и сохраняет копию в lesson-03; полный сброс включает forge.js', async t => {
   const root = await mkdtemp(resolve(tmpdir(), 'blockquest-forge-reset-')); t.after(() => rm(root, { recursive: true, force: true }));

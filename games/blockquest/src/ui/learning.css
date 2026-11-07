@@ -130,11 +130,11 @@ canvas { height: 100%; object-fit: contain; }
 @media (max-width: 600px) { .reward-status { font-size: 10px; left: 8px; top: 38px; padding: 5px 8px; } }
 
 /* Урок 02: переключатель уроков, хранитель и расчёт удара. */
-.lesson-switch { display: flex; gap: 2px; padding: 2px; margin-left: auto; margin-right: 8px; border: 1px solid #32423c; border-radius: 5px; background: #121e20; }
+.lesson-switch { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; margin-left: auto; margin-right: 8px; border: 1px solid #32423c; border-radius: 5px; background: #121e20; }
 .lesson-switch button { padding: 5px 8px; border: 0; border-radius: 3px; background: none; color: #83988e; font-size: 11px; white-space: nowrap; }
 .lesson-switch button[aria-pressed=true] { background: #344631; color: #c6e7aa; }
 .lesson-switch button:focus-visible { outline: 2px solid #8eb8a3; outline-offset: 1px; }
-.guardian-status { position: absolute; right: 14px; top: 51px; z-index: 2; max-width: calc(100% - 28px); padding: 8px 12px; border: 1px solid #8c7346; border-radius: 6px; background: #2d2618e8; color: #f3dcae; font-size: 12px; pointer-events: none; overflow-wrap: anywhere; }
+.guardian-status, .forest-status { position: absolute; right: 14px; top: 51px; z-index: 2; max-width: calc(100% - 28px); padding: 8px 12px; border: 1px solid #8c7346; border-radius: 6px; background: #2d2618e8; color: #f3dcae; font-size: 12px; pointer-events: none; overflow-wrap: anywhere; }
 .code-preview > .applied-values { height: auto; }
 .applied-values { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 12px 0; padding-top: 10px; border-top: 1px dashed #3a4c43; }
 .applied-values strong { width: 100%; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #8fa596; font-weight: 500; }
@@ -145,7 +145,7 @@ canvas { height: 100%; object-fit: contain; }
 .guardian-fight { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid #c9a35c; background: #2a2618; color: #f0dcb2; font-size: 12px; line-height: 1.7; }
 .experiment-card code { font: 12px ui-monospace, monospace; color: #d6efc0; }
 @media (max-width: 600px) {
-  .guardian-status { font-size: 10px; right: 8px; top: 38px; padding: 5px 8px; max-width: 46%; }
+  .guardian-status, .forest-status { font-size: 10px; right: 8px; top: 38px; padding: 5px 8px; max-width: 46%; }
   .lesson-switch button { padding: 5px 6px; font-size: 10px; }
 }
 .bonus-card { border-top: 1px solid #5a3f3a; padding: 20px 0 6px; }
@@ -179,3 +179,6 @@ canvas { height: 100%; object-fit: contain; }
 /* Карточка паузы, когда кузнец получил новый файл и ждёт возвращения в игру. */
 .forge-note { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 9px 12px; border: 1px solid #c9a35c66; border-radius: 6px; background: #2d261888; color: #ffe7a3; font-size: 12px; line-height: 1.6; text-align: left; }
 .forge-note .icon { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* Урок 04: статус леса — тот же ярлык, что у хранителя, в зелёных тонах. */
+.forest-status { border-color: #4f7a52; background: #16261ae8; color: #dff5c8; }

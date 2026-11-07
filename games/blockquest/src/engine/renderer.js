@@ -1,4 +1,6 @@
-import { WIDTH, HEIGHT, TILE, COLS, ROWS, tileAt, obstacles, portal, FORGE_SITE, isForgeOpen } from '../world/island.js';
+import { WIDTH, HEIGHT, TILE, COLS, ROWS, tileAt, obstacles, portal, FORGE_SITE, isForgeOpen, currentArea, setArea, activeObstacles } from '../world/island.js';
+import { FOREST_SIGN } from '../world/forest.js';
+import { PHASE_STATS, PHASE_LABEL } from './forest.js';
 
 const hash = (x, y) => { const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); };
 const rect = (ctx, color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), w, h); };
@@ -446,18 +448,112 @@ function drawWebbed(ctx, p, time) {
   ctx.moveTo(x - 12, y - 36); ctx.lineTo(x + 12, y - 2); ctx.moveTo(x + 12, y - 36); ctx.lineTo(x - 12, y - 2);
   ctx.stroke(); ctx.restore();
 }
-// Закрытые ворота на восточном берегу: видно, куда пойдём в уроке 04. С ключом от паука замок светится.
-function drawGate(ctx, time, hasKey = false) {
+// Ворота на восточном берегу: в уроке 03 закрыты (с ключом от паука замок светится), в уроке 04 распахнуты в лес.
+function drawGate(ctx, time, hasKey = false, open = false) {
   const { x, y } = FORGE_SITE.gate;
   shadow(ctx, x, y + 3, 26, 6);
-  rect(ctx, '#3a2a20', x - 14, y - 40, 28, 40);
-  for (let i = 0; i < 4; i++) rect(ctx, '#5a4030', x - 12 + i * 7, y - 38, 5, 38);
-  rect(ctx, '#3a3a3a', x - 14, y - 30, 28, 3); rect(ctx, '#3a3a3a', x - 14, y - 12, 28, 3);
-  rect(ctx, hasKey ? (Math.sin(time * 4) > 0 ? '#ffd36e' : '#c9a35c') : '#8a8a8a', x - 3, y - 22, 6, 6);
+  if (open) {
+    // Проём: зелёный сумрак леса и светлячки; створки отведены к столбам.
+    const depth = ctx.createLinearGradient(x, y - 40, x, y);
+    depth.addColorStop(0, '#0d2a1e'); depth.addColorStop(1, '#1e4a32');
+    ctx.fillStyle = depth; ctx.fillRect(x - 14, y - 40, 28, 40);
+    for (let i = 0; i < 3; i++) { const t = (time * 0.6 + i * 0.37) % 1; ctx.globalAlpha = Math.sin(t * Math.PI) * 0.9; rect(ctx, '#d8f29a', x - 8 + i * 8 + Math.sin(time * 2 + i) * 3, y - 10 - t * 26, 2, 2); }
+    ctx.globalAlpha = 1;
+    for (const side of [-1, 1]) { rect(ctx, '#3a2a20', x + side * 14 - 3, y - 40, 6, 40); rect(ctx, '#5a4030', x + side * 14 - 2, y - 38, 3, 38); }
+  } else {
+    rect(ctx, '#3a2a20', x - 14, y - 40, 28, 40);
+    for (let i = 0; i < 4; i++) rect(ctx, '#5a4030', x - 12 + i * 7, y - 38, 5, 38);
+    rect(ctx, '#3a3a3a', x - 14, y - 30, 28, 3); rect(ctx, '#3a3a3a', x - 14, y - 12, 28, 3);
+    rect(ctx, hasKey ? (Math.sin(time * 4) > 0 ? '#ffd36e' : '#c9a35c') : '#8a8a8a', x - 3, y - 22, 6, 6);
+  }
   for (const side of [-1, 1]) { rect(ctx, '#4e6661', x + side * 20 - 6, y - 48, 12, 48); rect(ctx, '#839282', x + side * 20 - 6, y - 48, 4, 46); rect(ctx, '#91ab75', x + side * 20 - 7, y - 50, 14, 4); }
   rect(ctx, '#74877b', x - 28, y - 56, 56, 9); rect(ctx, '#b0b998', x - 24, y - 58, 48, 4);
   if (Math.sin(time * 1.3) > 0.6) rect(ctx, '#d2e3a6', x - 1, y - 54, 2, 2);
-  ctx.fillStyle = '#e1e3ba'; ctx.textAlign = 'center'; ctx.font = 'bold 9px monospace'; ctx.fillText('ЛЕС · УРОК 04', x, y + 17);
+  ctx.fillStyle = '#e1e3ba'; ctx.textAlign = 'center'; ctx.font = 'bold 9px monospace'; ctx.fillText(open ? 'ЛЕС →' : 'ЛЕС · УРОК 04', x, y + 17);
+}
+// Урок 04 · лес. Фонарь: столб, стекло с огоньком и число яркости из файла ученика над ним.
+function drawLantern(ctx, l, time) {
+  const x = Math.round(l.x), y = Math.round(l.y), lit = l.radius > 0;
+  shadow(ctx, x, y + 1, 8, 3);
+  rect(ctx, '#3b2d22', x - 2, y - 30, 4, 30); rect(ctx, '#5a4634', x - 1, y - 28, 1, 26);
+  rect(ctx, '#2a2420', x - 7, y - 44, 14, 16); rect(ctx, lit ? (Math.sin(time * 6 + x) > 0 ? '#ffd36e' : '#ffbf4a') : '#3a3a3a', x - 5, y - 42, 10, 12);
+  if (lit) rect(ctx, '#fff6cf', x - 2, y - 38 + Math.sin(time * 9 + x) * 1.5, 4, 4);
+  rect(ctx, '#2a2420', x - 8, y - 47, 16, 3); rect(ctx, '#4a4038', x - 3, y - 50, 6, 3);
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#1b2228'; ctx.fillText(String(l.radius), x + 1, y - 54); ctx.fillStyle = '#ffe9b8'; ctx.fillText(String(l.radius), x, y - 55);
+}
+// Круг света на земле: граница, внутри которой Древень не нападает. Ученик видит число и круг одновременно.
+function drawLightRing(ctx, l, time) {
+  if (l.radius <= 0) return;
+  ctx.save(); ctx.strokeStyle = `rgba(255,220,140,${0.28 + Math.sin(time * 2 + l.x) * 0.06})`; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.ellipse(l.x, l.y - 14, l.radius, l.radius, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+function drawForestSign(ctx) {
+  const { x, y } = FOREST_SIGN;
+  shadow(ctx, x, y + 1, 8, 3);
+  rect(ctx, '#6b4a35', x - 2, y - 24, 4, 24); rect(ctx, '#a07a4a', x - 26, y - 34, 52, 13); rect(ctx, '#c49a62', x - 24, y - 32, 48, 2);
+  ctx.fillStyle = '#2b2620'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillText('← ОСТРОВ', x, y - 24);
+}
+// Древень: пень с корнями-ногами, ветви-руки и крона. Фаза меняет листву, глаза и размер; великан растёт на глазах.
+function drawTreant(ctx, t, time) {
+  const stats = PHASE_STATS[t.phase] ?? PHASE_STATS.calm;
+  const scale = stats.scale * (1 + (t.grow > 0 ? Math.sin(t.grow * 12) * 0.08 : 0));
+  const x = Math.round(t.x), y = Math.round(t.y);
+  shadow(ctx, x, y + 2, 18 * scale, 6 * scale);
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+  if (t.phase === 'angry' && !t.stun) {
+    const aura = ctx.createRadialGradient(0, -34, 4, 0, -34, 52);
+    aura.addColorStop(0, `rgba(255,90,70,${0.26 + Math.sin(time * 9) * 0.08})`); aura.addColorStop(1, 'rgba(255,90,70,0)');
+    ctx.fillStyle = aura; ctx.fillRect(-52, -86, 104, 104);
+  }
+  const w = Math.sin(time * 20) * t.wobble * 3, sway = Math.sin(time * 2 + t.x) * 3;
+  const bark = t.stun ? '#5d5a52' : t.phase === 'angry' ? '#5a3326' : '#4a3a2a', barkLight = t.stun ? '#8a877e' : t.phase === 'angry' ? '#8a4a36' : '#6b5538';
+  const leaf = t.stun ? '#6f7f6f' : t.phase === 'angry' ? '#b8452f' : t.phase === 'giant' ? '#2f6b3a' : '#2f7a4a';
+  const leafLight = t.stun ? '#9aa89a' : t.phase === 'angry' ? '#e0663a' : t.phase === 'giant' ? '#4a9a52' : '#4aa062';
+  rect(ctx, bark, -16, -7, 9, 9); rect(ctx, bark, 7, -7, 9, 9); rect(ctx, bark, -4, -5, 8, 7);
+  rect(ctx, bark, -11 + w, -40, 22, 36); rect(ctx, barkLight, -8 + w, -38, 4, 30); rect(ctx, barkLight, 4 + w, -24, 3, 14);
+  rect(ctx, bark, -27 + w, -31 + sway, 17, 5); rect(ctx, bark, 10 + w, -31 - sway, 17, 5);
+  rect(ctx, leaf, -31 + w, -37 + sway, 9, 9); rect(ctx, leaf, 22 + w, -37 - sway, 9, 9);
+  rect(ctx, leaf, -24 + w, -62, 48, 26); rect(ctx, leafLight, -18 + w, -68, 36, 12); rect(ctx, leaf, -12 + w, -74, 24, 8);
+  rect(ctx, leafLight, -20 + w, -56, 10, 6); rect(ctx, leafLight, 8 + w, -50, 12, 6); rect(ctx, '#9bd27a', -6 + w, -71, 5, 3);
+  const eyes = t.stun ? '#c9d2cd' : t.phase === 'angry' ? '#ff4a3d' : t.chasing ? '#ffd36e' : '#ffe9a8', f = t.facing;
+  rect(ctx, '#1b1612', -8 + w + f * 2, -30, 6, 5); rect(ctx, '#1b1612', 2 + w + f * 2, -30, 6, 5);
+  rect(ctx, eyes, -7 + w + f * 2, -29, 4, 3); rect(ctx, eyes, 3 + w + f * 2, -29, 4, 3);
+  rect(ctx, '#1b1612', -5 + w, -20, 10, t.phase === 'angry' ? 4 : 2);
+  if (t.flash > 0) { ctx.globalAlpha = t.flash * 3; rect(ctx, '#fff3d6', -31, -76, 62, 78); ctx.globalAlpha = 1; }
+  if (t.stun) { const sx = Math.cos(time * 5) * 14; rect(ctx, '#f6e2a3', sx - 2, -82, 5, 3); rect(ctx, '#f6e2a3', -sx - 2, -79, 5, 3); }
+  ctx.restore();
+}
+function treantLabel(ctx, t, player) {
+  const scale = (PHASE_STATS[t.phase] ?? PHASE_STATS.calm).scale, top = t.y - 78 * scale - 8;
+  const width = 64, filled = Math.round(width * t.health / t.maxHealth);
+  rect(ctx, '#1b2228cc', t.x - width / 2 - 2, top - 2, width + 4, 8);
+  rect(ctx, '#3d2b2b', t.x - width / 2, top, width, 4);
+  rect(ctx, t.phase === 'angry' ? '#ff5a4a' : t.phase === 'giant' ? '#9fe08a' : '#7fd3a0', t.x - width / 2, top, filled, 4);
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  const label = `${t.name} · ${PHASE_LABEL[t.phase] ?? t.phase}`;
+  ctx.fillStyle = '#1b2228'; ctx.fillText(label, t.x + 1, top - 5);
+  ctx.fillStyle = t.phase === 'angry' ? '#ffb3a3' : '#dff5c8'; ctx.fillText(label, t.x, top - 6);
+  if (t.says && Math.hypot(player.x - t.x, player.y - t.y) < 200) speechBubble(ctx, t, top);
+}
+// Тьма леса: слой темноты с «дырками» света у фонарей и вокруг героя. После победы над Древнем лес светлеет.
+let darkLayer;
+function drawForestDark(ctx, game, time) {
+  darkLayer ??= Object.assign(document.createElement('canvas'), { width: WIDTH, height: HEIGHT });
+  const d = darkLayer.getContext('2d');
+  d.globalCompositeOperation = 'source-over'; d.clearRect(0, 0, WIDTH, HEIGHT);
+  d.fillStyle = `rgba(4, 10, 18, ${0.76 * (1 - game.forestGlow * 0.85)})`; d.fillRect(0, 0, WIDTH, HEIGHT);
+  d.globalCompositeOperation = 'destination-out';
+  const hole = (x, y, r, strength = 1) => {
+    if (r <= 0) return;
+    const g = d.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(0,0,0,${strength})`); g.addColorStop(0.75, `rgba(0,0,0,${strength * 0.8})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    d.fillStyle = g; d.fillRect(x - r, y - r, r * 2, r * 2);
+  };
+  for (const l of game.lanterns) hole(l.x, l.y - 14, l.radius + Math.sin(time * 3 + l.x) * 2);
+  hole(game.player.x, game.player.y - 8, 60, 0.92);
+  if (game.treant && !game.treant.defeated) hole(game.treant.x, game.treant.y - 24, 44, 0.55);
+  ctx.drawImage(darkLayer, 0, 0);
 }
 // Эффекты оружия: росчерк меча, широкий взмах топора, волна молота и молния за потерянный рецепт.
 function drawWeaponEffect(ctx, game, progress, time) {
@@ -505,7 +601,34 @@ function drawWeaponEffect(ctx, game, progress, time) {
   ctx.restore();
 }
 
+// Лес: вместо океана — чаща, вместо травы — мох, тропа из тёмной земли. Деревья-препятствия рисуются поверх.
+function makeForestTerrain() {
+  const layer = document.createElement('canvas'); layer.width = WIDTH; layer.height = HEIGHT;
+  const ctx = layer.getContext('2d');
+  ctx.fillStyle = '#0b1a14'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  for (let row = 0; row < ROWS; row++) for (let col = 0; col < COLS; col++) {
+    const x = col * TILE, y = row * TILE, t = tileAt(col, row), h = hash(col + 7, row + 3);
+    if (t === '#') {
+      rect(ctx, ['#102a1c', '#0e2619', '#13301f'][Math.floor(h * 3)], x, y, TILE, TILE);
+      rect(ctx, '#1a3a26', x + 4 + h * 10, y + 6, 10, 14); rect(ctx, '#0a1a12', x + 8 + h * 10, y + 18, 4, 10);
+      if (h > 0.6) { rect(ctx, '#1f4a2e', x + 18, y + 4 + h * 8, 8, 10); rect(ctx, '#0a1a12', x + 21, y + 14 + h * 8, 2, 8); }
+      continue;
+    }
+    const edge = [[0, -1], [0, 1], [-1, 0], [1, 0]].some(([dx, dy]) => tileAt(col + dx, row + dy) === '#');
+    rect(ctx, t === '=' ? '#4a4634' : edge ? '#24452f' : ['#2c5236', '#2f5739', '#2a4d33'][Math.floor(h * 3)], x, y, TILE, TILE);
+    if (t === '=') { rect(ctx, '#5a5440', x + 2, y + 2, 28, 28); rect(ctx, '#6a6448', x + 5 + h * 12, y + 8, 7, 3); rect(ctx, '#3e3a2c', x + 19, y + 23, 5, 2); continue; }
+    for (let i = 0; i < 3; i++) {
+      const gx = x + 3 + hash(col + i, row * 2 + 1) * 24, gy = y + 3 + hash(col, row + i + 9) * 24;
+      rect(ctx, '#3c7a48', gx, gy, 2, 5); rect(ctx, '#5fa36a', gx + 2, gy - 2, 2, 3);
+    }
+    if (h > 0.86) { rect(ctx, '#7fb0ff', x + 12, y + 16, 3, 3); rect(ctx, '#d8f29a', x + 22, y + 9, 2, 2); }
+    if (h < 0.08) { rect(ctx, '#b56e57', x + 10, y + 18, 11, 5); rect(ctx, '#f5d8a6', x + 13, y + 19, 3, 2); rect(ctx, '#c6b584', x + 14, y + 23, 4, 3); }
+  }
+  for (const o of activeObstacles()) if (o.kind === 'rock') rock(ctx, o);
+  return layer;
+}
 function makeTerrain() {
+  if (currentArea() === 'forest') return makeForestTerrain();
   const layer = document.createElement('canvas'); layer.width = WIDTH; layer.height = HEIGHT;
   const ctx = layer.getContext('2d');
   ctx.fillStyle = '#204d59'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -553,11 +676,13 @@ function makeTerrain() {
 export function createRenderer(canvas) {
   canvas.width = WIDTH; canvas.height = HEIGHT;
   const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
-  // Тропа к кузнице меняет рельеф: слой земли строится отдельно для открытой и закрытой кузницы.
+  // Тропа к кузнице меняет рельеф, лес — другая карта: слой земли строится отдельно для каждого состояния.
   const terrains = {};
-  const terrain = () => terrains[isForgeOpen()] ??= makeTerrain();
+  const terrain = () => terrains[`${currentArea()}:${isForgeOpen()}`] ??= makeTerrain();
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   return function render(game, realTime) {
+    setArea(game.area ?? 'island');
+    const forest = game.area === 'forest';
     const ambientTime = motionPreference.matches ? 0 : realTime;
     const time = game.status === 'ready' ? ambientTime * 0.25 : game.time;
     ctx.save();
@@ -565,12 +690,19 @@ export function createRenderer(canvas) {
     ctx.drawImage(terrain(), 0, 0);
     // Течение воды и пылинки создают движение даже в спокойной сцене.
     ctx.globalAlpha = 0.28;
-    for (let i = 0; i < 25; i++) {
+    if (!forest) for (let i = 0; i < 25; i++) {
       const x = (i * 137 + ambientTime * 5) % WIDTH, y = (i * 79) % HEIGHT;
       if (tileAt(Math.floor(x / TILE), Math.floor(y / TILE)) === '#') rect(ctx, '#8abbbb', x, y, 12, 1);
     }
     ctx.globalAlpha = 1;
-    const drawables = [
+    if (forest) for (const l of game.lanterns) drawLightRing(ctx, l, ambientTime);
+    const drawables = forest ? [
+      ...activeObstacles().filter(o => o.kind === 'tree').map(o => ({ y: o.y, draw: () => tree(ctx, o) })),
+      ...game.lanterns.map(l => ({ y: l.y, draw: () => drawLantern(ctx, l, ambientTime) })),
+      { y: FOREST_SIGN.y, draw: () => drawForestSign(ctx) },
+      ...(game.treant && !game.treant.defeated ? [{ y: game.treant.y, draw: () => drawTreant(ctx, game.treant, time) }] : []),
+      { y: game.player.y, draw: () => drawPlayer(ctx, game.player, time, game.dashTime, game.forgeSettings && game.weaponsReceived ? game.weapon : null, game.pulseWeapon && game.pulse > 0 ? 1 - game.pulse / 0.38 : 0) },
+    ] : [
       { y: portal.y, draw: () => drawPortal(ctx, game.collected >= game.config.crystalsToWin, time) },
       ...obstacles.filter(o => o.kind === 'tree').map(o => ({ y: o.y, draw: () => tree(ctx, o) })),
       ...game.crystals.filter(c => !c.taken).map(c => ({ y: c.y, draw: () => drawCrystal(ctx, c.x, c.y, motionPreference.matches ? 0 : time, c.id) })),
@@ -584,19 +716,24 @@ export function createRenderer(canvas) {
         { y: game.smith.y, draw: () => drawSmith(ctx, game.smith, ambientTime) },
         { y: game.dummy.y, draw: () => drawDummy(ctx, game.dummy, ambientTime) },
         { y: FORGE_SITE.sign.y, draw: () => drawSign(ctx) },
-        { y: FORGE_SITE.gate.y, draw: () => drawGate(ctx, ambientTime, game.gateKey) },
+        { y: FORGE_SITE.gate.y, draw: () => drawGate(ctx, ambientTime, game.gateKey, game.gateOpen) },
         ...(game.spider && !game.spider.defeated ? [{ y: game.spider.y, draw: () => drawSpider(ctx, game.spider, time) }] : []),
       ] : []),
       { y: game.player.y, draw: () => drawPlayer(ctx, game.player, time, game.dashTime, game.forgeSettings && game.weaponsReceived ? game.weapon : null, game.pulseWeapon && game.pulse > 0 ? 1 - game.pulse / 0.38 : 0) },
     ];
     drawables.sort((a, b) => a.y - b.y).forEach(o => o.draw());
-    if (game.player.webbed > 0) drawWebbed(ctx, game.player, time);
-    for (const web of game.webs) drawWeb(ctx, web);
-    if (game.guardian && !game.guardian.defeated) guardianLabel(ctx, game.guardian, game.player);
-    if (game.spider && !game.spider.defeated) spiderLabel(ctx, game.spider, game.player);
-    // Новый файл: кузнец ждёт возвращения в игру; во время перековки говорит о работе. Обе фразы видны издалека.
-    if (game.forging) speechBubble(ctx, { x: game.smith.x, says: game.forging.started ? 'Перековываю… сейчас проверю.' : 'Новый файл! Нажми «Продолжить» — перекую.' }, game.smith.y - 56);
-    else if (game.smith?.says && Math.hypot(game.player.x - game.smith.x, game.player.y - game.smith.y) < 180) speechBubble(ctx, game.smith, game.smith.y - 56);
+    if (forest) {
+      drawForestDark(ctx, game, ambientTime);
+      if (game.treant && !game.treant.defeated) treantLabel(ctx, game.treant, game.player);
+    } else {
+      if (game.player.webbed > 0) drawWebbed(ctx, game.player, time);
+      for (const web of game.webs) drawWeb(ctx, web);
+      if (game.guardian && !game.guardian.defeated) guardianLabel(ctx, game.guardian, game.player);
+      if (game.spider && !game.spider.defeated) spiderLabel(ctx, game.spider, game.player);
+      // Новый файл: кузнец ждёт возвращения в игру; во время перековки говорит о работе. Обе фразы видны издалека.
+      if (game.forging) speechBubble(ctx, { x: game.smith.x, says: game.forging.started ? 'Перековываю… сейчас проверю.' : 'Новый файл! Нажми «Продолжить» — перекую.' }, game.smith.y - 56);
+      else if (game.smith?.says && Math.hypot(game.player.x - game.smith.x, game.player.y - game.smith.y) < 180) speechBubble(ctx, game.smith, game.smith.y - 56);
+    }
     if (game.pulse > 0) {
       const progress = 1 - game.pulse / 0.38;
       if (game.pulseWeapon) drawWeaponEffect(ctx, game, progress, realTime);

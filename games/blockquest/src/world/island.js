@@ -1,3 +1,5 @@
+import { FOREST_MAP, forestObstacles } from './forest.js';
+
 export const TILE = 32;
 export const COLS = 30;
 export const ROWS = 20;
@@ -33,7 +35,12 @@ const FORGE_PATH = new Set(['12,3', '13,3', '14,3', '15,3']);
 let forgeOpen = false;
 export function setForgeOpen(open) { forgeOpen = Boolean(open); }
 export const isForgeOpen = () => forgeOpen;
+// Урок 04: за воротами лес — другая карта. Какая область активна, решает игра перед каждым шагом и кадром.
+let area = 'island';
+export function setArea(next) { area = next === 'forest' ? 'forest' : 'island'; }
+export const currentArea = () => area;
 export const tileAt = (col, row) => {
+  if (area === 'forest') return FOREST_MAP[row]?.[col] ?? '#';
   const t = MAP[row]?.[col] ?? '#';
   return forgeOpen && t === '.' && FORGE_PATH.has(`${col},${row}`) ? '=' : t;
 };
@@ -45,7 +52,7 @@ export const FORGE_SITE = {
 };
 // Двор кузницы — перемирие: слизни и жуки не заходят туда и не преследуют героя рядом с кузнецом.
 export const FORGE_YARD = { left: 330, right: 640, bottom: 190 };
-export const inForgeYard = p => forgeOpen && p.x > FORGE_YARD.left && p.x < FORGE_YARD.right && p.y < FORGE_YARD.bottom;
+export const inForgeYard = p => forgeOpen && area === 'island' && p.x > FORGE_YARD.left && p.x < FORGE_YARD.right && p.y < FORGE_YARD.bottom;
 export const forgeObstacles = [
   { x: 448, y: 58, radius: 40, kind: 'hut' }, { x: 410, y: 70, radius: 26, kind: 'hut' }, { x: 486, y: 70, radius: 26, kind: 'hut' },
   { ...FORGE_SITE.anvil, radius: 9, kind: 'anvil' }, { ...FORGE_SITE.smith, radius: 10, kind: 'smith' },
@@ -77,9 +84,12 @@ export function canStand(x, y, radius = 9) {
   for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
     if (terrainAt(x + dx, y + dy) === '#') return false;
   }
+  if (area === 'forest') return !forestObstacles.some(o => Math.hypot(x - o.x, y - o.y) < radius + o.radius);
   if (obstacles.some(o => Math.hypot(x - o.x, y - o.y) < radius + o.radius)) return false;
   return !forgeOpen || !forgeObstacles.some(o => Math.hypot(x - o.x, y - o.y) < radius + o.radius);
 }
+// Препятствия активной области: для отрисовки деревьев и проверки ходов.
+export const activeObstacles = () => area === 'forest' ? forestObstacles : forgeOpen ? [...obstacles, ...forgeObstacles] : obstacles;
 
 export function moveBody(body, dx, dy) {
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;

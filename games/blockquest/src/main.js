@@ -7,9 +7,14 @@ import * as studentMonsters from '../../../student/monsters.js';
 import initialMonstersSource from '../../../student/monsters.js?raw';
 import * as studentForge from '../../../student/forge.js';
 import initialForgeSource from '../../../student/forge.js?raw';
+import * as studentForest from '../../../student/forest.js';
+import initialForestSource from '../../../student/forest.js?raw';
 import currentLessonText from '../../../teacher/lessons/current.md?raw';
 import { aiPrompt, aiActivity } from './ui/ai-activity.js';
-import { createGame, startGame, togglePause, updateGame, applyConfig, applyRule, setGuardian, removeGuardian, setMonsters, removeMonsters, setForge, removeForge, selectWeapon, smithCelebrate, startForging, setForgeStatus, forgePending } from './engine/game.js';
+import { createGame, startGame, togglePause, updateGame, applyConfig, applyRule, setGuardian, removeGuardian, setMonsters, removeMonsters, setForge, removeForge, selectWeapon, smithCelebrate, startForging, setForgeStatus, forgePending, setForest, removeForest, enterForest } from './engine/game.js';
+import { FOREST_DEFAULTS, FOREST_RECOMMENDED, LANTERN_ORDER, validateForest, evaluateForest, PHASE_LABEL, TREANT } from './engine/forest.js';
+import { forestMissions, evaluateForestMission, freshForestEvidence, forestState, FOREST_CARDS } from './ui/forest-missions.js';
+import { lessonFourDocument, forestExperiments } from './ui/lesson-04.js';
 import { FORGE_DEFAULTS, FORGE_RECOMMENDED, WEAPONS, WEAPON_ORDER, ORDERS, validateForge, evaluateOrders, describeShort, recipeFunction } from './engine/forge.js';
 import { SPIDER, spiderDamage } from './engine/spider.js';
 import { forgeMissions, evaluateForgeMission, freshForgeEvidence, forgeState, tierOrders, ORDER_CARDS, EXTRA_CARDS, MAIN_ORDERS } from './ui/forge-missions.js';
@@ -39,10 +44,11 @@ function readCourse() {
 const learning = createLearningState(readSaved('blockquest.lesson1.v3') ?? migrateNumberLesson(readSaved('blockquest.lesson1.v2')), { easy: readSaved('blockquest.lesson1.v1')?.easy === true });
 const learning2 = createLearningState(readSaved('blockquest.lesson2.v1'));
 const learning3 = createLearningState(readSaved('blockquest.lesson3.v1'));
+const learning4 = createLearningState(readSaved('blockquest.lesson4.v1'));
 const course = readCourse();
 let lessonId = course.lesson;
-const lessonMissions = () => lessonId === 3 ? forgeMissions : lessonId === 2 ? guardianMissions : missions;
-const lessonLearning = () => lessonId === 3 ? learning3 : lessonId === 2 ? learning2 : learning;
+const lessonMissions = () => lessonId === 4 ? forestMissions : lessonId === 3 ? forgeMissions : lessonId === 2 ? guardianMissions : missions;
+const lessonLearning = () => lessonId === 4 ? learning4 : lessonId === 3 ? learning3 : lessonId === 2 ? learning2 : learning;
 let level = lessonLearning().level;
 let evidence = freshEvidence();
 let guardianEvidence = freshGuardianEvidence();
@@ -53,6 +59,13 @@ let forgeCandidate = studentForge;
 let forgeSource = initialForgeSource;
 let orderResults = evaluateOrders(studentForge, initialForgeSource, []);
 let extraOpen = false;
+// Урок 04: файл леса, таблица фаз Древня и что ученик успел в лесу после последнего сохранения.
+let forestEvidence = freshForestEvidence();
+let forestModule = studentForest;
+let forestCandidate = studentForest;
+let forestSource = initialForestSource;
+let forestResults = evaluateForest(studentForest, initialForestSource);
+let lastPhaseWarning = '';
 let guardianModule = studentGuardian;
 // Последние загруженные файлы урока 02; в игру они попадают, только если типы значений верные.
 let guardianCandidate = studentGuardian;
@@ -70,10 +83,15 @@ let introReplay = false;
 function newGame(config, previous = null) {
   const next = createGame(config, currentRule); applyRule(next, currentRule);
   if (lessonId >= 2) { setGuardian(next, guardianModule); setMonsters(next, monstersModule); }
-  if (lessonId === 3) {
+  if (lessonId >= 3) {
     setForge(next, forgeModule);
-    next.weaponsReceived = previous?.forgeSettings ? previous.weaponsReceived : learning3.received;
+    // В уроке 04 оружие уже в руке: до леса идти с пустыми руками незачем.
+    next.weaponsReceived = lessonId === 4 || (previous?.forgeSettings ? previous.weaponsReceived : learning3.received);
     if (previous?.forgeSettings) next.weapon = previous.weapon;
+  }
+  if (lessonId === 4) {
+    setForest(next, forestModule);
+    if (previous?.area === 'forest') enterForest(next, { quiet: true });
   }
   return next;
 }
@@ -102,13 +120,13 @@ app.innerHTML = `
         <section class="game-card" aria-label="BlockQuest: Кристальный остров">
           <div class="game-titlebar"><div class="game-title">${icon('crystal')}<strong>Кристальный остров</strong><span class="edition">BLOCKQUEST</span></div><div class="game-actions"><span id="game-state" class="state-tag">Готов к приключению</span><button class="icon-button" id="sound-btn" aria-label="Включить звук" aria-pressed="false">${icon('mute')}</button><button class="icon-button" id="pause-btn" aria-label="Пауза" disabled>${icon('pause')}</button><button class="icon-button" id="fullscreen-btn" aria-label="Развернуть игру">${icon('compass')}</button><button class="icon-button" id="restart-btn" aria-label="Начать экспедицию заново">${icon('reset')}</button></div></div>
           <div class="hud" aria-label="Показатели игры"><div class="health-stat"><span class="stat-label">${icon('heart')}ЗДОРОВЬЕ</span><div class="health-line"><div class="health-track"><span id="health-fill"></span></div><strong id="health-value">100<span>/100</span></strong></div></div><div class="hud-divider"></div><div class="crystal-stat"><span class="stat-label">${icon('crystal')}КРИСТАЛЛЫ</span><strong id="crystal-value">0 <span>/ 15</span></strong></div><div class="hud-divider"></div><div><span class="stat-label">${icon('flag')}ОЧКИ</span><strong id="score-value">0</strong></div><div class="hud-clock" id="timer">00:00</div></div>
-          <div class="canvas-wrap"><canvas id="game" tabindex="0" role="img" aria-label="Кристальный остров. Движение WASD или стрелками, пробел — импульс, Shift — рывок. Пауза — Escape."></canvas><div class="map-label"><span class="map-coordinate">ОСТРОВ 01 / 30 × 20</span><span class="map-name">CRYSTAL ISLAND</span></div><div id="reward-status" class="reward-status" role="status" hidden></div><div id="guardian-status" class="guardian-status" role="status" hidden></div><div id="weapon-status" class="weapon-status" role="status" hidden></div><div class="compass-rose" aria-hidden="true">N<span>↑</span></div><div class="game-overlay" id="game-overlay"></div><div class="objective" id="objective">${icon('crystal')}Собери кристаллы и вернись к порталу</div><div class="ability-status"><span id="pulse-status">Пробел · импульс</span><span id="dash-status">Shift · рывок</span></div></div>
+          <div class="canvas-wrap"><canvas id="game" tabindex="0" role="img" aria-label="Кристальный остров. Движение WASD или стрелками, пробел — импульс, Shift — рывок. Пауза — Escape."></canvas><div class="map-label"><span class="map-coordinate">ОСТРОВ 01 / 30 × 20</span><span class="map-name">CRYSTAL ISLAND</span></div><div id="reward-status" class="reward-status" role="status" hidden></div><div id="guardian-status" class="guardian-status" role="status" hidden></div><div id="weapon-status" class="weapon-status" role="status" hidden></div><div id="forest-status" class="forest-status" role="status" hidden></div><div class="compass-rose" aria-hidden="true">N<span>↑</span></div><div class="game-overlay" id="game-overlay"></div><div class="objective" id="objective">${icon('crystal')}Собери кристаллы и вернись к порталу</div><div class="ability-status"><span id="pulse-status">Пробел · импульс</span><span id="dash-status">Shift · рывок</span></div></div>
           <div class="controls"><span><kbd>W</kbd><span class="key-stack"><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span class="control-text">движение <small>или стрелки</small></span></span><span><kbd class="wide">Пробел</kbd> импульс</span><span><kbd>Shift</kbd> рывок</span><span class="weapon-control" id="weapon-control" hidden><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> оружие</span><span class="pause-control"><kbd>Esc</kbd> пауза</span></div>
         </section>
         <div id="developer-invite" class="developer-invite" hidden><div><strong>Готов изменить правила этого мира?</strong><p>Ты уже исследователь. Попробуй стать разработчиком.</p></div><button id="become-developer" class="primary-button">Стать разработчиком ${icon('arrow')}</button></div><div class="feedback-strip"><span class="feedback-icon">${icon('bolt')}</span><p><strong>Это твой мир. Меняй его.</strong><span>Сохрани свой файл в <code>student/</code> — игра сразу применит правку.</span></p><span class="live-pill"><i></i>LIVE</span></div>
       </div>
       <aside class="lesson-panel">
-        <div class="panel-heading"><span class="eyebrow">ЛАБОРАТОРИЯ КОДА</span><div class="lesson-switch" role="group" aria-label="Урок">${LESSONS.map(n => `<button data-lesson="${n}" aria-pressed="${n === lessonId}">Урок 0${n}</button>`).join('')}</div><button class="icon-button" id="lab-close" aria-label="Свернуть лабораторию">${icon('close')}</button></div>
+        <div class="panel-heading"><span class="eyebrow">ЛАБОРАТОРИЯ КОДА</span><div class="lesson-switch" role="group" aria-label="Урок">${LESSONS.map(n => `<button data-lesson="${n}" aria-pressed="${n === lessonId}" title="Урок 0${n}">0${n}</button>`).join('')}</div><button class="icon-button" id="lab-close" aria-label="Свернуть лабораторию">${icon('close')}</button></div>
         <p class="panel-intro">Открой <strong>student/config.js</strong> в VS Code. Начни с чисел, затем создай способность в <strong>student/rules.js</strong>.</p>
         <div class="mission-heading"><h3>Твой маршрут</h3><span id="mission-count">0 / 3</span></div>
         <div class="level-tabs" role="tablist" aria-label="Уровень задания">${Object.entries(missions).map(([key, mission]) => `<button role="tab" id="tab-${key}" aria-controls="mission-content" aria-selected="${key === level}" data-level="${key}">${mission.label}</button>`).join('')}</div>
@@ -121,7 +139,7 @@ app.innerHTML = `
     <footer><span class="footer-brand">BLOCKQUEST ACADEMY <span>·</span> Учимся создавать, играя.</span><span>Один остров. Твои правила. ${icon('crystal')}</span></footer>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <dialog id="help-dialog"><button class="dialog-close icon-button" data-close-dialog aria-label="Закрыть">${icon('close')}</button><div class="eyebrow">ПУТЕВОДИТЕЛЬ ИССЛЕДОВАТЕЛЯ</div><h2>Добро пожаловать на остров</h2><p>Собери нужное количество кристаллов и вернись к каменному порталу у лагеря.</p><ul class="help-list"><li>${icon('compass')}<span><strong>WASD / стрелки</strong> — исследуй остров. Вода и деревья непроходимы.</span></li><li>${icon('bolt')}<span><strong>Пробел</strong> — оттолкни и оглуши слизней и жуков рядом.</span></li><li>${icon('arrow')}<span><strong>Shift</strong> — короткий рывок. Во время рывка ты защищён.</span></li><li>${icon('code')}<span><strong>1 / 2 / 3</strong> — меч, топор или молот из кузницы (урок 03).</span></li><li>${icon('heart')}<span>Слизни и жуки наносят <strong>20 урона</strong>; жуки быстрее преследуют героя. Следующий удар — не раньше чем через 1,2 секунды.</span></li></ul><p>Нажми <strong>Esc</strong>, чтобы сделать паузу. При переходе в редактор игра приостановится сама.</p><button class="text-button" id="replay-intro">Повторить знакомство с островом ${icon('arrow')}</button><button class="primary-button" data-close-dialog>Всё понятно ${icon('check')}</button></dialog>
+  <dialog id="help-dialog"><button class="dialog-close icon-button" data-close-dialog aria-label="Закрыть">${icon('close')}</button><div class="eyebrow">ПУТЕВОДИТЕЛЬ ИССЛЕДОВАТЕЛЯ</div><h2>Добро пожаловать на остров</h2><p>Собери нужное количество кристаллов и вернись к каменному порталу у лагеря.</p><ul class="help-list"><li>${icon('compass')}<span><strong>WASD / стрелки</strong> — исследуй остров. Вода и деревья непроходимы.</span></li><li>${icon('bolt')}<span><strong>Пробел</strong> — оттолкни и оглуши слизней и жуков рядом.</span></li><li>${icon('arrow')}<span><strong>Shift</strong> — короткий рывок. Во время рывка ты защищён.</span></li><li>${icon('code')}<span><strong>1 / 2 / 3</strong> — меч, топор или молот из кузницы (урок 03).</span></li><li>${icon('compass')}<span><strong>Ворота на востоке</strong> — лес (урок 04): в свете фонарей Древень не нападает, выход — тропа на запад.</span></li><li>${icon('heart')}<span>Слизни и жуки наносят <strong>20 урона</strong>; жуки быстрее преследуют героя. Следующий удар — не раньше чем через 1,2 секунды.</span></li></ul><p>Нажми <strong>Esc</strong>, чтобы сделать паузу. При переходе в редактор игра приостановится сама.</p><button class="text-button" id="replay-intro">Повторить знакомство с островом ${icon('arrow')}</button><button class="primary-button" data-close-dialog>Всё понятно ${icon('check')}</button></dialog>
 `;
 
 const canvas = document.querySelector('#game');
@@ -141,6 +159,7 @@ function saveProgress() {
     localStorage.setItem('blockquest.lesson1.v3', JSON.stringify(learning));
     localStorage.setItem('blockquest.lesson2.v1', JSON.stringify(learning2));
     localStorage.setItem('blockquest.lesson3.v1', JSON.stringify(learning3));
+    localStorage.setItem('blockquest.lesson4.v1', JSON.stringify(learning4));
     localStorage.setItem('blockquest.course.v1', JSON.stringify(course));
   }
   catch { toast('Браузер не разрешил сохранение. Прогресс доступен до закрытия страницы.'); }
@@ -159,25 +178,26 @@ function updatePhase() {
   renderLessonChrome();
 }
 function renderLessonChrome() {
-  const stamps = { 1: ['ТВОЯ ПЕРВАЯ МИССИЯ', 'Hack the Game'], 2: ['МИССИЯ 02', 'Хранитель кристаллов'], 3: ['МИССИЯ 03', 'Кузница'] };
+  const stamps = { 1: ['ТВОЯ ПЕРВАЯ МИССИЯ', 'Hack the Game'], 2: ['МИССИЯ 02', 'Хранитель кристаллов'], 3: ['МИССИЯ 03', 'Кузница'], 4: ['МИССИЯ 04', 'Лес'] };
   $('#lesson-pill').textContent = `0${lessonId}`;
   $('#stamp-label').textContent = stamps[lessonId][0];
   $('#stamp-title').textContent = stamps[lessonId][1];
   document.querySelectorAll('[data-lesson]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.lesson) === lessonId)));
-  if (renderedDoc !== lessonId) { renderedDoc = lessonId; $('#lesson-view').innerHTML = lessonId === 3 ? lessonThreeDocument(forgeMissions, icon) : lessonId === 2 ? lessonTwoDocument(guardianMissions, icon) : lessonOneDoc; }
+  if (renderedDoc !== lessonId) { renderedDoc = lessonId; $('#lesson-view').innerHTML = lessonId === 4 ? lessonFourDocument(forestMissions, icon) : lessonId === 3 ? lessonThreeDocument(forgeMissions, icon) : lessonId === 2 ? lessonTwoDocument(guardianMissions, icon) : lessonOneDoc; }
 }
 function switchLesson(next) {
   if (next === lessonId || !LESSONS.includes(next)) return;
   lessonLearning().level = level;
   lessonId = next; course.lesson = next; level = lessonLearning().level;
   if (lessonId >= 2) { setGuardian(game, guardianModule); setMonsters(game, monstersModule); } else { removeGuardian(game); removeMonsters(game); }
-  if (lessonId === 3) { setForge(game, forgeModule); game.weaponsReceived = learning3.received; forgeEvidence = freshForgeEvidence(); } else removeForge(game);
+  if (lessonId >= 3) { setForge(game, forgeModule); game.weaponsReceived = lessonId === 4 || learning3.received; forgeEvidence = freshForgeEvidence(); } else removeForge(game);
+  if (lessonId === 4) { setForest(game, forestModule); forestEvidence = freshForestEvidence(); } else removeForest(game);
   guardianEvidence = freshGuardianEvidence();
   checkLessonTypes();
   refreshOrders({ animate: false });
   saveProgress(); missionSignature = ''; renderLessonChrome(); trackLearning(); updateUI();
   $('.lesson-panel').scrollTop = 0;
-  toast(lessonId === 3 ? 'На северном берегу открылась тропа к кузнице. Клавиши 1, 2, 3 — оружие.' : lessonId === 2 ? 'На острове появился Хранитель! Он ждёт в центре острова.' : 'Урок 01: числа и первое условие.');
+  toast(lessonId === 4 ? 'Ворота на восточном берегу открыты. За ними лес, фонари и Древень.' : lessonId === 3 ? 'На северном берегу открылась тропа к кузнице. Клавиши 1, 2, 3 — оружие.' : lessonId === 2 ? 'На острове появился Хранитель! Он ждёт в центре острова.' : 'Урок 01: числа и первое условие.');
 }
 function openLab() {
   introReplay = false;
@@ -196,7 +216,7 @@ function renderMission() {
   $('#mission-content').setAttribute('aria-labelledby', `tab-${level}`);
   const count = lessonLearning().hints[level];
   const isRules = m.file === 'rules.js';
-  $('.panel-intro').innerHTML = m.file === 'forge.js' ? 'Открой <strong>student/forge.js</strong> в VS Code. Свои функции пиши ниже строки «ЗАКАЗЫ КУЗНЕЦА».' : m.file === 'guardian.js' ? 'Открой <strong>student/guardian.js</strong> в VS Code. Слева от = имя, справа значение.' : isRules ? 'Открой <strong>student/rules.js</strong> в VS Code. Своё условие пиши внутри готовой оболочки.' : 'Открой <strong>student/config.js</strong> в VS Code. Начни с одного числа.';
+  $('.panel-intro').innerHTML = m.file === 'forest.js' ? 'Шаги урока — в панели <strong>BlockQuest</strong> в VS Code. Файл: <strong>student/forest.js</strong>, функции пиши ниже строки «ФАЗЫ ДРЕВНЯ».' : m.file === 'forge.js' ? 'Открой <strong>student/forge.js</strong> в VS Code. Свои функции пиши ниже строки «ЗАКАЗЫ КУЗНЕЦА».' : m.file === 'guardian.js' ? 'Открой <strong>student/guardian.js</strong> в VS Code. Слева от = имя, справа значение.' : isRules ? 'Открой <strong>student/rules.js</strong> в VS Code. Своё условие пиши внутри готовой оболочки.' : 'Открой <strong>student/config.js</strong> в VS Code. Начни с одного числа.';
   const next = Object.keys(missions)[Object.keys(missions).indexOf(level) + 1];
   $('#mission-content').innerHTML = `
     <div class="mission-meta"><span class="mission-number">${m.label.toUpperCase()}</span><span>${m.tag}</span></div>
@@ -209,6 +229,7 @@ function renderMission() {
     <div class="mission-verification ${state.tested ? 'verified' : ''}" role="status">${icon(state.tested ? 'check' : 'code')}<span>${configError ? 'Сначала исправь ошибку в файле.' : state.tested ? m.success : state.configured ? m.testInstruction : m.waiting ?? (isRules ? 'Сохрани правило, нажми ↻ и проверь момент появления бонуса.' : 'Жду изменения в student/config.js')}</span></div>
     ${lessonId === 2 ? guardianFight() : ''}
     ${lessonId === 3 ? forgeCards() : ''}
+    ${lessonId === 4 ? forestCards() : ''}
     ${saved.done ? '<p class="mission-history">Этот маршрут уже пройден. Можно продолжать эксперименты.</p>' : ''}
     ${state.tested || saved.done ? `<div class="reflection"><p>${m.check}</p><label class="mission-complete"><input type="checkbox" id="mission-complete" ${saved.understood ? 'checked' : ''}/><span class="checkbox-art">${icon('check')}</span><span>Проверил и могу объяснить</span></label><small>Это твоя самооценка. Объясни результат преподавателю.</small></div>` : ''}
     ${next && saved.done ? `<button id="next-mission" data-next="${next}" class="primary-button">Следующий маршрут ${icon('arrow')}</button>` : ''}
@@ -216,6 +237,7 @@ function renderMission() {
     ${lessonId === 2 && level === 'challenge' ? rageCard() : ''}
     ${lessonId === 2 && level === 'easy' && (learning2.progress.easy.done || state.tested) ? `<section class="experiment-card"><button id="toggle-experiment" aria-expanded="${learning2.experimentOpen}">${icon('bolt')}А что, если?.. ${learning2.experimentOpen ? '−' : '+'}</button>${learning2.experimentOpen ? guardianExperiments : ''}</section>` : ''}
     ${lessonId === 3 && level === 'easy' && (learning3.progress.easy.done || state.tested) ? `<section class="experiment-card"><button id="toggle-experiment" aria-expanded="${learning3.experimentOpen}">${icon('bolt')}А что, если?.. ${learning3.experimentOpen ? '−' : '+'}</button>${learning3.experimentOpen ? forgeExperiments : ''}</section>` : ''}
+    ${lessonId === 4 && level === 'easy' && (learning4.progress.easy.done || state.tested) ? `<section class="experiment-card"><button id="toggle-experiment" aria-expanded="${learning4.experimentOpen}">${icon('bolt')}А что, если?.. ${learning4.experimentOpen ? '−' : '+'}</button>${learning4.experimentOpen ? forestExperiments : ''}</section>` : ''}
     ${lessonId === 1 && level === 'easy' && (learning.progress.easy.done || evaluateMission('easy',game.config,evidence,game.warnings).tested) ? `<section class="experiment-card"><button id="toggle-experiment" aria-expanded="${learning.experimentOpen}">${icon('bolt')}А что, если?.. ${learning.experimentOpen ? '−' : '+'}</button>${learning.experimentOpen ? '<p>Предскажи: что будет со скоростью 15? А 50? Измени число в VS Code, сравни управление и верни удобное значение.</p><p>Затем попробуй сделать слизней быстрее героя. Меняй одно число за раз. Все пять настроек показаны выше.</p>' : ''}</section>` : ''}
   `;
   $('#mission-count').textContent = `${Object.values(lessonLearning().progress).filter(p=>p.done).length} / 3`;
@@ -257,8 +279,33 @@ function weaponCard() {
   const hand = game.weaponsReceived ? `В руке: ${WEAPONS[game.weapon].name}. Клавиши 1, 2, 3 в игре. Молот бьёт дальше, сильнее отбрасывает и дольше оглушает, но медленнее. Паук у ворот в лес: ${SPIDER.health} здоровья и панцирь — меч по нему бьёт вполсилы.` : 'Оружие пока у кузнеца: дойди до него по тропе на север, он выдаст все три.';
   return `<section class="order-card"><div class="eyebrow">ОРУЖИЕ ИЗ КУЗНИЦЫ</div><table class="trial-table"><thead><tr><th></th><th>Оружие</th><th>Урон</th><th>Откат</th><th>Ударов по ${esc(g ? g.name : 'хранителю')}</th><th>По пауку</th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="order-note">${hand}${regen}</p></section>`;
 }
+// Урок 04: фонари с яркостью из файла, таблица фаз Древня, помощник внутри и слова Древня.
+function lanternCard() {
+  const s = game.forestSettings; if (!s) return '';
+  const rows = LANTERN_ORDER.map(key => `<tr><td>${esc(key)}</td><td>${s[key]}</td><td>${s[key] > 0 ? `круг ${s[key]} шагов` : 'погас'}</td></tr>`);
+  const where = game.area === 'forest' ? 'Ты в лесу: круги света видны на земле, число — над фонарём.' : 'Войди в лес через восточные ворота: круги света видны на земле. Древень гонится по всему лесу, в круг не заходит: там можно отдышаться, бьют его снаружи.';
+  return `<section class="order-card"><div class="eyebrow">ФОНАРИ ЛЕСА</div><table class="trial-table"><thead><tr><th>Имя</th><th>Яркость</th><th>В лесу</th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="order-note">${where}${forestResults.glow ? ` Рецепт: функция ${esc(forestResults.glow.name)} вызвана ${forestResults.glow.calls} раза.` : ' Пока формула написана три раза: напиши функцию glow(size) и вызови её трижды.'}</p></section>`;
+}
+function helperCard() {
+  const helper = forestResults.helper;
+  const status = helper ? `Помощник ${helper} вызывается внутри treantPhase.` : forestResults.phase.status === 'missing' ? 'Сначала напиши treantPhase.' : 'Жду свою функцию без export, вызванную внутри treantPhase: if (isDanger(health)) { ... }';
+  return `<section class="order-card ${helper ? 'passed' : ''}"><div class="eyebrow">ПОМОЩНИК ВНУТРИ</div><h4>Условие с именем</h4><p>function isDanger(health) { return health &lt;= 30; } — возвращает да или нет. Внутри treantPhase: if (isDanger(health)) { return "giant"; }</p><div class="mission-verification ${helper ? 'verified' : ''}" role="status">${icon(helper ? 'check' : 'bolt')}<span>${esc(status)}</span></div></section>`;
+}
+function treantCard() {
+  const t = game.treant; if (!t) return '';
+  const fight = t.defeated ? `Древень побеждён за ${t.hits} ${hitsWord(t.hits)}: +${TREANT.reward} очков. Вернётся через ${Math.ceil(t.respawn)} с.` : `Древень: ${t.health} из ${t.maxHealth} · фаза «${PHASE_LABEL[t.phase]}» ("${t.phase}") · ударов: ${t.hits}.`;
+  const seen = forestEvidence.phases.length ? ` Фазы в бою: ${forestEvidence.phases.map(ph => `"${ph}"`).join(' → ')}.` : '';
+  return `<p class="guardian-fight" role="status">${esc(fight + seen)}</p>`;
+}
+function forestCards() {
+  const phase = orderCard('phase', FOREST_CARDS.phase, forestResults.phase);
+  if (level === 'easy') return lanternCard();
+  if (level === 'normal') return treantCard() + phase;
+  return helperCard() + phase + orderCard('says', FOREST_CARDS.says, forestResults.says);
+}
 // Итог экспедиции у портала подводит черту под уроком: что сделано на острове, кроме кристаллов.
 function expeditionSummary() {
+  if (lessonId === 4) return `Лес: ${forestEvidence.entered ? 'пройден' : 'ещё не открыт'} · Древень: ${forestEvidence.defeated ? 'побеждён' : forestEvidence.treantHits ? `${forestEvidence.treantHits} ${hitsWord(forestEvidence.treantHits)}` : 'не тронут'} · фазы: ${forestResults.phase.status === 'passed' ? 'сходятся' : 'пока нет'}`;
   if (lessonId === 3) return `Заказов кузнеца: ${game.rack.ordersDone ?? 0} из ${game.rack.ordersTotal ?? 4} · ${game.gateKey ? 'паук побеждён, ключ от ворот у тебя' : 'паук у ворот ещё ждёт'}${guardianEvidence.secret ? ' · секрет хранителя найден' : ''}`;
   if (lessonId === 2) return guardianEvidence.secret ? 'Секретный кристалл хранителя найден' : game.guardian?.defeated ? 'Хранитель побеждён — секрет остался' : 'Хранитель в центре острова не побеждён';
   return 'А что изменится, если поменять правила?';
@@ -291,7 +338,7 @@ function smithSays(recipe) {
 }
 // Кузнец проверяет заказы после каждого сохранения: новый зачёт — праздник, новая ошибка — красный горн.
 function refreshOrders({ animate = true } = {}) {
-  if (lessonId !== 3 || !game.forgeSettings) return;
+  if (lessonId < 3 || !game.forgeSettings) return;
   const previous = orderResults;
   orderResults = evaluateOrders(forgeModule, forgeSource, game.dummy?.returns ?? []);
   const recipe = recipeFunction(forgeSource);
@@ -318,10 +365,12 @@ function rageCard() {
 }
 function lessonWarnings() {
   if (configError) return ['syntax'];
+  if (lessonId === 4) return [...game.forestWarnings];
   if (lessonId === 3) return [...game.forgeWarnings];
   return lessonId === 2 ? [...game.guardianWarnings, ...game.monsterWarnings] : [...game.warnings, ...(game.ruleWarning ? [game.ruleWarning] : [])];
 }
 function evaluate(key) {
+  if (lessonId === 4) return evaluateForestMission(key, forestState(forestResults), forestEvidence, lessonWarnings());
   if (lessonId === 3) return evaluateForgeMission(key, forgeState(forgeSource, orderResults), forgeEvidence, lessonWarnings());
   return lessonId === 2
     ? evaluateGuardianMission(key, game.guardianSettings, guardianSource, guardianEvidence, lessonWarnings())
@@ -333,12 +382,13 @@ function trackLearning() {
     const state = evaluate(key);
     if (state.tested && progress[key].understood && !progress[key].done) {
       progress[key].done = true; saveProgress();
-      if (key === level) toast(key !== 'challenge' ? 'Маршрут пройден. Теперь можно попробовать следующий.' : lessonId === 3 ? 'Маршрут пройден. Объясни соседу, что получает и что возвращает твоя функция.' : lessonId === 2 ? 'Маршрут пройден. Дай другу прочитать твой файл и предсказать бой.' : 'Маршрут пройден. Покажи свою способность и объясни правило.');
+      if (key === level) toast(key !== 'challenge' ? 'Маршрут пройден. Теперь можно попробовать следующий.' : lessonId === 4 ? 'Маршрут пройден. Объясни соседу, что возвращает isDanger и почему у неё нет export.' : lessonId === 3 ? 'Маршрут пройден. Объясни соседу, что получает и что возвращает твоя функция.' : lessonId === 2 ? 'Маршрут пройден. Дай другу прочитать твой файл и предсказать бой.' : 'Маршрут пройден. Покажи свою способность и объясни правило.');
     }
   }
   const state = evaluate(level);
-  const orderSignature = lessonId === 3 ? Object.entries(orderResults).map(([key, result]) => [key, result?.status, result?.message, result?.rows?.map(row => row.got) ?? result]) : null;
-  const signature = JSON.stringify([lessonId,level,state,lessonLearning().hints,progress,lessonLearning().experimentOpen,extraOpen,game.ruleWarning,game.guardianWarnings,game.monsterWarnings,game.moodWarning,guardianEvidence,game.guardian?.health,game.guardian?.rage,orderSignature,forgeEvidence,game.weapon,game.weaponsReceived,game.forgeWarnings,game.dummyWarning,game.guardian?.maxHealth,game.rack,game.lightning,game.gateKey]);
+  const orderSignature = lessonId >= 3 ? Object.entries(orderResults).map(([key, result]) => [key, result?.status, result?.message, result?.rows?.map(row => row.got) ?? result]) : null;
+  const forestSignature = lessonId === 4 ? [forestResults.phase.status, forestResults.phase.message, forestResults.phase.rows.map(row => row.got), forestResults.says.status, forestResults.says.rows.map(row => row.got), forestResults.helper, forestResults.glow, game.forestSettings, game.forestWarnings, game.phaseWarning, game.area, game.treant?.phase, game.treant?.health, game.treant?.defeated, forestEvidence] : null;
+  const signature = JSON.stringify([lessonId,level,state,lessonLearning().hints,progress,lessonLearning().experimentOpen,extraOpen,game.ruleWarning,game.guardianWarnings,game.monsterWarnings,game.moodWarning,guardianEvidence,game.guardian?.health,game.guardian?.rage,orderSignature,forgeEvidence,game.weapon,game.weaponsReceived,game.forgeWarnings,game.dummyWarning,game.guardian?.maxHealth,game.rack,game.lightning,game.gateKey,forestSignature]);
   if (signature !== missionSignature) { missionSignature = signature; renderMission(); }
 }
 function renderGuardianSource() {
@@ -368,11 +418,25 @@ function renderForgeSource() {
   }));
   preview.append(applied);
 }
+function renderForestSource() {
+  const preview = $('#config-preview'); preview.replaceChildren();
+  const pre = document.createElement('pre'); pre.className = 'rule-source';
+  pre.textContent = stripComments(forestSource).split('\n').map(line => line.trimEnd()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  preview.append(pre);
+  if (!game.forestSettings) return;
+  const applied = document.createElement('div'); applied.className = 'applied-values';
+  const heading = document.createElement('strong'); heading.textContent = 'Игра получила';
+  applied.append(heading, ...Object.entries(game.forestSettings).map(([key, value]) => {
+    const row = document.createElement('code'); row.textContent = `${key} = ${value}`; return row;
+  }));
+  preview.append(applied);
+}
 function renderConfig() {
   const file = lessonMissions()[level].file;
   const isRules = file === 'rules.js';
   const keys = learning.experimentOpen ? Object.keys(game.config) : ['playerSpeed'];
-  if (file === 'forge.js') renderForgeSource();
+  if (file === 'forest.js') renderForestSource();
+  else if (file === 'forge.js') renderForgeSource();
   else if (file === 'guardian.js') renderGuardianSource();
   else if (isRules) {
     $('#config-preview').replaceChildren();
@@ -383,7 +447,7 @@ function renderConfig() {
     $('#config-preview').innerHTML = keys.map(name => `<div class="active-code"><span class="line-number">${Object.keys(game.config).indexOf(name)+1}</span><code><span class="code-purple">export const</span> <span class="config-name">${name}</span> <span class="code-operator">=</span> <span class="code-number">${game.config[name]}</span><span class="code-operator">;</span></code></div>`).join('');
   }
   // Ошибка бонуса ярости видна в лаборатории, но не отменяет зачёт основных маршрутов.
-  const extraWarning = !configError && (lessonId === 2 ? game.moodWarning : lessonId === 3 ? game.dummyWarning : '');
+  const extraWarning = !configError && (lessonId === 2 ? game.moodWarning : lessonId === 3 ? game.dummyWarning : lessonId === 4 ? game.phaseWarning : '');
   const warnings = extraWarning ? [...lessonWarnings(), extraWarning] : lessonWarnings();
   $('#config-status').textContent = configError ? 'Ошибка — показана последняя применённая версия' : warnings.length ? 'Проверь файл' : 'Применено в игре';
   $('#config-status').parentElement.classList.toggle('has-warning', !!warnings.length);
@@ -391,13 +455,13 @@ function renderConfig() {
   if (warnings.length && !configError) {
     const warning = document.createElement('div'); warning.id = 'config-warning'; warning.className = 'config-warning'; warning.setAttribute('role', 'alert');
     warning.textContent = warnings.join(' ');
-    if (file === 'guardian.js' || file === 'forge.js') $('#config-preview').before(warning); else $('.config-footnote').after(warning);
+    if (file === 'guardian.js' || file === 'forge.js' || file === 'forest.js') $('#config-preview').before(warning); else $('.config-footnote').after(warning);
   }
-  $('#config-preview').title = file === 'forge.js' ? Object.entries(FORGE_RECOMMENDED).map(([key, value]) => `${key}: рекомендуем ${value}`).join(' · ') : file === 'guardian.js' ? Object.entries(GUARDIAN_RECOMMENDED).map(([key, value]) => `${key}: рекомендуем ${value}`).join(' · ') : isRules ? 'Твоё применённое правило. Редактируй в VS Code, затем нажми ↻.' : keys.map(key=>`${key}: рекомендуем ${RECOMMENDED[key]}`).join(' · ');
+  $('#config-preview').title = file === 'forest.js' ? Object.entries(FOREST_RECOMMENDED).map(([key, value]) => `${key}: рекомендуем ${value}`).join(' · ') : file === 'forge.js' ? Object.entries(FORGE_RECOMMENDED).map(([key, value]) => `${key}: рекомендуем ${value}`).join(' · ') : file === 'guardian.js' ? Object.entries(GUARDIAN_RECOMMENDED).map(([key, value]) => `${key}: рекомендуем ${value}`).join(' · ') : isRules ? 'Твоё применённое правило. Редактируй в VS Code, затем нажми ↻.' : keys.map(key=>`${key}: рекомендуем ${RECOMMENDED[key]}`).join(' · ');
 }
 
 function resetGame(playing = true) {
-  game = newGame(game.config, game); evidence = freshEvidence(); guardianEvidence = freshGuardianEvidence(); forgeEvidence = freshForgeEvidence(); clearInput();
+  game = newGame(game.config, game); evidence = freshEvidence(); guardianEvidence = freshGuardianEvidence(); forgeEvidence = freshForgeEvidence(); forestEvidence = { ...freshForestEvidence(), entered: game.area === 'forest' }; clearInput();
   refreshOrders({ animate: false });
   if (playing && !configError && learning.phase !== 'intro' && !introReplay) startGame(game);
   previousStatus = undefined; lastHud = ''; updateUI();
@@ -428,7 +492,15 @@ function updateUI() {
   rewardStatus.hidden = !game.reward.used;
   rewardStatus.classList.toggle('shield-active', game.player.shield);
   rewardStatus.textContent = game.player.shield ? '◇ Твой щит · 1 удар' : game.reward.action === 'shield' ? '◇ Щит потерян · ищи кристаллы' : '♡ Лечение применено';
-  const guardianStatus = $('#guardian-status'), g = game.guardian;
+  const forestStatus = $('#forest-status'), inForest = game.area === 'forest', t = game.treant;
+  // Подпись карты и фон под холстом меняются вместе с областью: лес тёмный, остров бирюзовый.
+  $('.canvas-wrap').classList.toggle('in-forest', inForest);
+  const mapCoordinate = inForest ? 'ЛЕС · 30 × 20' : 'ОСТРОВ 01 / 30 × 20', mapName = inForest ? 'DARK FOREST' : 'CRYSTAL ISLAND';
+  if ($('.map-coordinate').textContent !== mapCoordinate) { $('.map-coordinate').textContent = mapCoordinate; $('.map-name').textContent = mapName; }
+  const forestText = !inForest || !t ? '' : t.defeated ? `★ Древень побеждён · +${TREANT.reward} очков` : `♣ ${t.name} · ${t.health}/${t.maxHealth} · ${PHASE_LABEL[t.phase]} ("${t.phase}") · удары: ${t.hits}`;
+  forestStatus.hidden = !forestText;
+  if (forestStatus.textContent !== forestText) forestStatus.textContent = forestText;
+  const guardianStatus = $('#guardian-status'), g = game.guardian && !inForest ? game.guardian : null;
   const guardianText = !g ? '' : game.secret?.taken ? `★ Секрет найден · +${game.guardianSettings.guardianReward} очков` : g.defeated ? `★ ${g.name} побеждён · забери секретный кристалл` : `♜ ${g.name} · ${g.health}/${g.maxHealth} · удары: ${g.hits}${g.rage ? ' · ЯРОСТЬ' : ''}`;
   guardianStatus.hidden = !g;
   if (guardianStatus.textContent !== guardianText) guardianStatus.textContent = guardianText;
@@ -547,7 +619,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.code === 'Escape' && !e.repeat) { togglePause(game); clearInput(); updateUI(); }
   // Урок 03: клавиши 1, 2, 3 выбирают оружие из кузницы.
-  if (lessonId === 3 && !e.repeat && /^Digit[123]$/.test(e.code)) { selectWeapon(game, WEAPON_ORDER[Number(e.code.at(-1)) - 1]); trackLearning(); updateUI(); }
+  if (lessonId >= 3 && !e.repeat && /^Digit[123]$/.test(e.code)) { selectWeapon(game, WEAPON_ORDER[Number(e.code.at(-1)) - 1]); trackLearning(); updateUI(); }
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 function pauseOnLeave() { clearInput(); if (game.status === 'playing') { togglePause(game); updateUI(); } }
@@ -564,7 +636,15 @@ function step(input, dt) {
   for (const item of game.events.splice(0)) {
     const event = typeof item === 'string' ? item : item.type;
     audio.play(event === 'pulse' && item.weapon ? `pulse-${item.weapon}` : event);
-    if (lessonId === 3 && game.weaponsReceived && ['guardian-hit', 'monster-hit', 'dummy-hit', 'spider-hit'].includes(event)) forgeEvidence.weaponHits++;
+    if (lessonId >= 3 && game.weaponsReceived && ['guardian-hit', 'monster-hit', 'dummy-hit', 'spider-hit', 'treant-hit'].includes(event)) forgeEvidence.weaponHits++;
+    if (event === 'forest-enter') { forestEvidence.entered = true; toast('Ты в лесу. Древень гонится по всему лесу, но в круг фонаря не заходит: там можно отдышаться. Выход — тропа на запад.'); }
+    if (event === 'forest-leave') toast('Ты вернулся на остров. Ворота в лес открыты.');
+    if (event === 'treant-hit') forestEvidence.treantHits = item.hits;
+    if (event === 'treant-phase') {
+      forestEvidence.phases.push(item.to);
+      toast(`Древень: "${item.from}" → "${item.to}" при здоровье ${item.health}. Твоя функция решила.`);
+    }
+    if (event === 'treant-defeated') { forestEvidence.defeated = true; toast(`Древень побеждён за ${item.hits} ${hitsWord(item.hits)}! Лес посветлел. Через 20 секунд он вернётся.`); }
     if (event === 'spider-defeated') toast(`Паук у ворот побеждён за ${item.hits} ${hitsWord(item.hits)}!`);
     if (event === 'gate-key') toast('Ключ от ворот у тебя. Ворота в лес откроются в уроке 04.');
     if (event === 'webbed') toast('Паутина замедляет. Shift — вырваться.');
@@ -604,6 +684,7 @@ function step(input, dt) {
     if (event === 'guardian-rage') { guardianEvidence.rageAt ??= item.health; toast(`Ярость! ${game.guardian.name} злится при здоровье ${item.health}: твоё правило сработало.`); }
     if (event === 'portal') toast('Древний портал заряжен! Вернись в лагерь слева.');
   }
+  if (game.phaseWarning !== lastPhaseWarning) { lastPhaseWarning = game.phaseWarning; if (lastPhaseWarning) toast('Древень не понял ответ treantPhase: подсказка в лаборатории.'); }
   trackLearning(); updateUI();
 }
 let lastTime = 0;
@@ -629,7 +710,8 @@ function checkLessonTypes() {
   const checks = lessonId >= 2 ? [
     { file: 'student/guardian.js', errors: validateGuardian(guardianCandidate).errors, source: guardianSource, defaults: GUARDIAN_DEFAULTS },
     { file: 'student/monsters.js', errors: validateMonsters(monstersCandidate).errors, source: monstersSource, defaults: MONSTER_DEFAULTS },
-    ...(lessonId === 3 ? [{ file: 'student/forge.js', errors: validateForge(forgeCandidate).errors, source: forgeSource, defaults: FORGE_DEFAULTS }] : []),
+    ...(lessonId >= 3 ? [{ file: 'student/forge.js', errors: validateForge(forgeCandidate).errors, source: forgeSource, defaults: FORGE_DEFAULTS }] : []),
+    ...(lessonId === 4 ? [{ file: 'student/forest.js', errors: validateForest(forestCandidate).errors, source: forestSource, defaults: FOREST_DEFAULTS }] : []),
   ].filter(check => check.errors.length) : [];
   for (const file of [...typeErrorFiles]) if (!checks.some(check => check.file === file)) { typeErrorFiles.delete(file); clearFileError(file); }
   checks.forEach(({ file, errors, source, defaults }, i) => {
@@ -718,7 +800,7 @@ if (import.meta.hot) {
     forgeCandidate = next; typeErrorFiles.delete('student/forge.js'); clearFileError('student/forge.js');
     if (!checkLessonTypes().has('student/forge.js')) {
       forgeModule = next;
-      if (lessonId === 3) {
+      if (lessonId >= 3) {
         setForge(game, next); forgeEvidence = freshForgeEvidence(); refreshOrders();
         toast(game.forgeWarnings.length ? 'Проверь student/forge.js: подсказка в лаборатории.' : game.status === 'playing' ? 'Кузнец взялся за молот: перековывает оружие и проверяет заказы.' : 'Кузнец получил файл. Нажми «Продолжить» — он перекуёт оружие и проверит заказы.');
       } else toast('Кузница сохранена. Открой «Урок 03» в лаборатории, чтобы дойти до кузнеца.');
@@ -729,6 +811,26 @@ if (import.meta.hot) {
     if (source) forgeSource = source.default;
     if (typeErrorFiles.has('student/forge.js')) checkLessonTypes();
     refreshOrders({ animate: false });
+    missionSignature = ''; trackLearning(); renderConfig();
+  });
+  // Урок 04: сохранение леса перезажигает фонари, Древень заново спрашивает фазу, таблица фаз пересчитывается.
+  import.meta.hot.accept('../../../student/forest.js', next => {
+    if (!next) { reportRuntimeError('student/forest.js'); return; }
+    forestCandidate = next; typeErrorFiles.delete('student/forest.js'); clearFileError('student/forest.js');
+    if (!checkLessonTypes().has('student/forest.js')) {
+      forestModule = next; forestResults = evaluateForest(forestModule, forestSource);
+      if (lessonId === 4) {
+        setForest(game, next); forestEvidence = { ...freshForestEvidence(), entered: game.area === 'forest' };
+        const s = game.forestSettings, phase = forestResults.phase;
+        toast(game.forestWarnings.length ? 'Проверь student/forest.js: подсказка в лаборатории.' : phase.status === 'passed' ? `Фонари ${s.lanternSmall} · ${s.lanternMedium} · ${s.lanternBig}. Фазы сходятся: ударь Древня и смотри.` : phase.status === 'missing' ? `Фонари ${s.lanternSmall} · ${s.lanternMedium} · ${s.lanternBig}. Древень ждёт функцию treantPhase.` : `Фонари перезажжены. Таблица фаз: ${phase.message}`);
+      } else toast('Лес сохранён. Открой «Урок 04» в лаборатории, чтобы войти в него.');
+    }
+    clearInput(); missionSignature = ''; renderConfig(); trackLearning(); updateUI();
+  });
+  import.meta.hot.accept('../../../student/forest.js?raw', source => {
+    if (source) forestSource = source.default;
+    if (typeErrorFiles.has('student/forest.js')) checkLessonTypes();
+    forestResults = evaluateForest(forestModule, forestSource);
     missionSignature = ''; trackLearning(); renderConfig();
   });
 }
@@ -745,6 +847,9 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('test')) {
     get guardianEvidence() { return guardianEvidence; },
     get forgeEvidence() { return forgeEvidence; },
     get orderResults() { return orderResults; },
+    get learning4() { return learning4; },
+    get forestEvidence() { return forestEvidence; },
+    get forestResults() { return forestResults; },
     switchLesson,
   };
 }

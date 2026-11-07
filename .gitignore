@@ -11,3 +11,8 @@ workspaces/
 *.log
 releases/
 .academy/update.lock
+extension/node_modules/
+extension/out/
+extension/*.vsix
+.academy/progress.json
+.academy/work.json

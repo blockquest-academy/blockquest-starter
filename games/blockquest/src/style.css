@@ -2152,3 +2152,6 @@ dialog .primary-button {
     animation: none !important;
   }
 }
+
+/* Урок 04: в лесу поля вокруг холста тёмные, как сама чаща. */
+.canvas-wrap.in-forest { background: #0b1a14; }

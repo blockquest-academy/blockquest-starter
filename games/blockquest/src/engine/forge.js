@@ -131,7 +131,7 @@ function missingMessage(order, module, source) {
   if (definedInSource(source, fn)) return `Функция ${fn} есть в файле, но игра её не видит: нужен export перед function.`;
   const near = nearestName(fn, exportedFunctions(module));
   if (near) return `Жду функцию ${fn}, а в файле есть ${near}. Проверь буквы.`;
-  return `Жду функцию ${fn} в student/forge.js: export function ${fn}(${params}) { ... }`;
+  return `Жду функцию ${fn} в ${order.file ?? 'student/forge.js'}: export function ${fn}(${params}) { ... }`;
 }
 function noteFor(got, expected) {
   if (got === undefined) return 'функция ничего не вернула — где return?';
@@ -158,7 +158,7 @@ export function runOrder(order, module, source = '') {
   const rows = order.cases.map(testCase => runCase(order, fn, testCase));
   const hidden = order.hidden.map(testCase => ({ ...runCase(order, fn, testCase), hidden: true }));
   const failed = [...rows, ...hidden].find(row => !row.ok);
-  if (!failed) return { status: 'passed', message: `Заказ выполнен: ${order.item.toLowerCase()} на стойке.`, rows };
+  if (!failed) return { status: 'passed', message: order.done ?? `Заказ выполнен: ${order.item.toLowerCase()} на стойке.`, rows };
   const message = failed.error ? `${failed.call} остановилась с ошибкой: ${failed.note}`
     : failed.hidden ? `Проверка на другом числе — ${failed.call}: ${failed.note}. Формула должна работать для любого числа.`
     : `${failed.call}: ${failed.note}`;
